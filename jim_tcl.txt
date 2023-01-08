@@ -3,7 +3,7 @@ Jim Tcl(n)
 
 NAME
 ----
-Jim Tcl v0.81 - reference manual for the Jim Tcl scripting language
+Jim Tcl v0.81+ - reference manual for the Jim Tcl scripting language
 
 SYNOPSIS
 --------
@@ -52,6 +52,13 @@ Some notable differences with Tcl 8.5/8.6/8.7 are:
 
 RECENT CHANGES
 --------------
+Changes between 0.81 and 0.82
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+1. `try` now supports trap to match on errorcode
+2. TIP 603, `aio stat` is now supported to stat a file handle
+3. Add support for `socket -async`
+4. The handles created by `socket pty` now make the replica name available via 'filename'
+
 Changes between 0.80 and 0.81
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 1. TIP 582, comments allowed in expressions
@@ -1134,7 +1141,7 @@ and POSIX are highlighted below.
 1. UTF-8 strings and patterns are both supported
 2. All Tcl character classes are supported (e.g. +[:alnum:]+, +[:digit:]+, +[:space:]+), but...
 3. Character classes apply to ASCII characters only
-4. Supported shorthand character classes: +{backslash}w+ = +[:alnum:]+, +{backslash}W+ = +^[:alnum:]+, +{backslash}d+ = +[:digit:],+ +{backslash}D+ = +^[:digit:],+ +{backslash}s+ = +[:space:]+, + +{backslash}S+ = +^[:space:]+
+4. Supported shorthand character classes: +{backslash}w+ = +[:alnum:]+, +{backslash}W+ = +\^[:alnum:]+, +{backslash}d+ = +[:digit:],+ +{backslash}D+ = +\^[:digit:],+ +{backslash}s+ = +[:space:]+, + +{backslash}S+ = +^[:space:]+
 5. Supported constraint escapes: +{backslash}m+ = +{backslash}<+ = start of word, +{backslash}M+ = +{backslash}>+ = end of word, +{backslash}A+ = start of string, +{backslash}Z+ = end of string
 6. Backslash escapes may be used within regular expressions, such as +{backslash}n+ = newline, +{backslash}uNNNN+ = unicode
 7. Support for the +?+ non-greedy quantifier. e.g. +*?+
@@ -2047,6 +2054,23 @@ the following creates a local, unnamed alias for the command `info exists`.
 
 See also `proc`, `alias`, `lambda`, `local`.
 
+defer
+~~~~~
++*defer* 'script'+
+
+This command is a simple helper command to add a script to the '+$jim::defer+' variable
+that will run when the current proc or interpreter exits. For example:
+
+----
+    . proc a {} { defer {puts "Leaving a"}; puts "Exit" }
+    . a
+    Exit
+    Leaving a
+----
+
+If the '+$jim::defer+' variable exists, it is treated as a list of scripts to run
+when the proc or interpreter exits.
+
 dict
 ~~~~
 +*dict* 'option ?arg\...?'+
@@ -2524,6 +2548,9 @@ abbreviation for +'option'+ is acceptable.  The valid options are:
     Return all of the characters in +'name'+ up to but not including
     the last '.' character in the name.  If +'name'+ doesn't contain
     a dot, then return +'name'+.
+
++*file size* 'name'+::
+    Returns the size, in bytes, of the file +'name'+.
 
 +*file split* 'name'+::
     Returns a list whose elements are the path components in +'name'+.
@@ -3452,23 +3479,6 @@ with last option being used.
     The list length must be an integer multiple of 'strideLength', which
     in turn must be at least 2.
 
-defer
-~~~~~
-+*defer* 'script'+
-
-This command is a simple helper command to add a script to the '+$jim::defer+' variable
-that will run when the current proc or interpreter exits. For example:
-
-----
-    . proc a {} { defer {puts "Leaving a"}; puts "Exit" }
-    . a
-    Exit
-    Leaving a
-----
-
-If the '+$jim::defer+' variable exists, it is treated as a list of scripts to run
-when the proc or interpreter exits.
-
 open
 ~~~~
 +*open* 'fileName ?access?'+
@@ -3783,10 +3793,10 @@ The following switches modify the behaviour of +'regexp'+
 +*-line*+::
     Use newline-sensitive matching. By default, newline
     is a completely ordinary character with no special meaning in
-    either REs or strings. With this flag, +[^+ bracket expressions
-    and +.+ never match newline, an +^+ anchor matches the empty
+    either REs or strings. With this flag, +*[\^*+ bracket expressions
+    and +*.*+ never match newline, an +*^*+ anchor matches the empty
     string after any newline in the string in addition to its normal
-    function, and the +$+ anchor matches the empty string before any
+    function, and the +*$*+ anchor matches the empty string before any
     newline in the string in addition to its normal function.
 
 +*-indices*+::
@@ -4570,29 +4580,35 @@ Time is measured in elapsed time, not CPU time.
 
 try
 ~~~
-+*try* '?catchopts? tryscript' ?*on* 'returncodes {?resultvar? ?optsvar?} handlerscript \...'? ?*finally* 'finalscript'?+
++*try* '?catchopts? tryscript' ?*on|trap* 'match {?resultvar? ?optsvar?} handlerscript \...'? ?*finally* 'finalscript'?+
 
 The `try` command is provided as a convenience for exception handling.
 
 This interpeter first evaluates +'tryscript'+ under the effect of the catch
 options +'catchopts'+ (e.g. +-signal -noexit --+, see `catch`).
 
-It then evaluates the script for the first matching 'on' handler
-(there many be zero or more) based on the return code from the `try`
-section. For example a normal +JIM_ERR+ error will be matched by
-an 'on error' handler.
+It then evaluates the script for the first matching 'on' or 'trap'
+handler (there many be zero or more) based on the return code and
+'errorcode' from the `try` section. For example a normal +JIM_ERR+
+error will be matched by an 'on error' handler.
 
 Finally, any +'finalscript'+ is evaluated.
 
-The result of this command is the result of +'tryscript'+, except in the
-case where an exception occurs in a matching 'on' handler script or the 'finally' script,
-in which case the result is this new exception.
+The result of this command is the result of +'tryscript'+, except
+in the case where an exception occurs in a matching 'on' handler
+script or the 'finally' script, in which case the result is this
+new exception.
 
-The specified +'returncodes'+ is a list of return codes either as names ('ok', 'error', 'break', etc.)
-or as integers.
+For the +'on'+ handler, 'match' is a list of return codes either
+as names ('ok', 'error', 'break', etc.) or as integers.
 
-If +'resultvar'+ and +'optsvar'+ are specified, they are set as for `catch` before evaluating
-the matching handler.
+For the +'trap'+ handler, 'match' is a list to match against
+'errorcode'. For example, if the errorcode was
++'\{CHILDKILLED 10627 SIGTERM\}'+, then a 'match' value of +\{CHILDKILLED\}+
+would match.
+
+If +'resultvar'+ and +'optsvar'+ are specified, they are set as for
+`catch` before evaluating the matching handler.
 
 For example:
 
@@ -4602,6 +4618,9 @@ For example:
         process $f
     } on {continue break} {} {
         error "Unexpected break/continue"
+    } trap CHILDKILLED {msg opts} {
+        puts "A child process died"
+        return {*}$opts $msg
     } on error {msg opts} {
         puts "Dealing with error"
         return {*}$opts $msg
@@ -4613,7 +4632,8 @@ For example:
 ----
 
 If break, continue or error are raised, they are dealt with by the matching
-handler.
+handler. If an error occurred with an errorcode of +CHILDKILLED+, the trap
+handler will be evaluated as it is specified before the 'on error' handler.
 
 In any case, the file will be closed via the 'finally' clause.
 
@@ -4900,7 +4920,8 @@ aio
 
 +$handle *filename*+::
     Returns the original filename associated with the handle.
-    Handles returned by `socket` give the socket type instead of a filename.
+    Handles returned by `socket` provide different information.
+	See `socket` for each socket type.
 
 +$handle *flush*+::
     Flush the stream
@@ -4951,6 +4972,10 @@ aio
 
 +$handle *sockname*+::
     Returns the bound address or path of the socket. See 'getsockname(2)'.
+
++$handle *stat* ?varName?+::
+    Implements the same functionality as `file stat` for a filehandle.
+    Only available on platforms that support 'fstat(2)' or equivalent.
 
 +$handle *sockopt* '?name value?'+::
     With no arguments, returns a dictionary of socket options currently set for the handle
@@ -5109,40 +5134,51 @@ Various socket types may be created.
 
 +*socket unix* 'path'+::
     A unix domain socket client connected to 'path'
+	'filename' returns +'path'+
 
 +*socket unix.server* 'path'+::
     A unix domain socket server listening on 'path'
+	'filename' returns +'path'+
 
 +*socket unix.dgram* '?path?'+::
     A unix domain socket datagram client, optionally connected to 'path'
+	'filename' returns +'path'+ if provided or "dgram" if not
 
 +*socket unix.dgram.server* 'path'+::
     A unix domain socket datagram server server listening on 'path'
+	'filename' returns +'path'+
 
-+*socket ?-ipv6? stream* 'addr:port'+::
++*socket ?-async? ?-ipv6? stream* 'addr:port'+::
     A TCP socket client. (See the forms for +'addr'+ below)
+	'filename' returns +'addr:port'+
 
-+*socket ?-ipv6? stream.server* '?addr:?port'+::
++*socket ?-async? ?-ipv6? stream.server* '?addr:?port'+::
     A TCP socket server (+'addr'+ defaults to +0.0.0.0+ for IPv4 or +[::]+ for IPv6).
+	'filename' returns +'addr:port'+
 
-+*socket ?-ipv6? dgram* ?'addr:port'?+::
++*socket ?-async? ?-ipv6? dgram* ?'addr:port'?+::
     A UDP socket client. If the address is not specified,
     the client socket will be unbound and 'sendto' must be used
     to indicated the destination.
+	'filename' returns +'addr:port'+ if provided or "dgram" if not
 
-+*socket ?-ipv6? dgram.server* 'addr:port'+::
++*socket ?-async? ?-ipv6? dgram.server* 'addr:port'+::
     A UDP socket server.
+	'filename' returns +'addr:port'+
 
 +*socket pipe*+::
     A synonym for `pipe`
+	'filename' returns "pipe"
 
 +*socket pair*+::
     A socketpair (see socketpair(2)). Like `pipe`, this command returns
     a list of two channels: {s1 s2}. These channels are both readable and writable.
+	'filename' returns "pair"
 
 +*socket pty*+::
     A pseudo-tty pair (see openpty(3)). Like `pipe`, this command returns
-    a list of two channels: {master slave}. These channels are both readable and writable.
+    a list of two channels: {primary replica}. These channels are both readable and writable.
+	'filename' for both handles returns the replica filename.
 
 This command creates a socket connected (client) or bound (server) to the given
 address.
@@ -5192,6 +5228,38 @@ An unconnected dgram socket (either 'dgram' or 'unix.dgram') must use
 The path for Unix domain sockets is automatically removed when the socket
 is closed. Use `close -nodelete` in the rare case where this behaviour
 should be avoided (e.g. after `os.fork`).
+
+If '+-async+' is specified, the socket is opened in non-blocking (ndelay) mode
+and 'connect' is non-blocking (applies to 'stream'). In this case, a 'writable' handler
+should be used that will fire when the connect succeeds or fails, and calling 'peername' on the handle
+will succeed if connected or fail if connect failed. Typical usage is as follows:
+
+----
+    set s [socket -async stream host:port]
+
+    $s writable {
+        # Remove writable either way
+        $s writable {}
+        try {
+            $s peername
+        } on error msg {
+            # Connect failed
+            incr done
+            return
+        }
+
+        $s readable {
+            set buf [$s read]
+            if {[$s eof]} {
+                # Closed connection
+                incr done
+            }
+            ...
+        }
+    }
+
+    vwait done
+----
 
 syslog
 ~~~~~~

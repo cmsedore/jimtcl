@@ -3830,7 +3830,7 @@ static void JimDecrCmdRefCount(Jim_Interp *interp, Jim_Cmd *cmdPtr)
 
 /* Variables HashTable Type.
  *
- * Keys are dynamically allocated strings, Values are Jim_Var structures.
+ * Keys are Jim_Obj. Values are Jim_Var.
  */
 static void JimVariablesHTValDestructor(void *interp, void *val)
 {
@@ -4036,7 +4036,7 @@ static void JimCreateCommand(Jim_Interp *interp, Jim_Obj *nameObjPtr, Jim_Cmd *c
     /* Otherwise simply replace any existing command */
 
     /* Note that it is not necessary to increment the 'proc epoch' because any
-     * existing command that is replace will be held as a negative cache entry
+     * existing command that is replaced will be held as a negative cache entry
      * until the next time the proc epoch is incremented.
      */
     Jim_ReplaceHashEntry(&interp->commands, nameObjPtr, cmd);
@@ -4557,12 +4557,6 @@ static Jim_Var *JimCreateVariable(Jim_Interp *interp, Jim_Obj *nameObjPtr, Jim_O
 
     return var;
 }
-
-/* For now that's dummy. Variables lookup should be optimized
- * in many ways, with caching of lookups, and possibly with
- * a table of pre-allocated vars in every CallFrame for local vars.
- * All the caching should also have an 'epoch' mechanism similar
- * to the one used by Tcl for procedures lookup caching. */
 
 /**
  * Set the variable nameObjPtr to value valObjptr.
@@ -5317,7 +5311,7 @@ static int SetReferenceFromAny(Jim_Interp *interp, Jim_Obj *objPtr)
 {
     unsigned long value;
     int i, len;
-    const char *str, *start, *end;
+    const char *str;
     char refId[21];
     Jim_Reference *refPtr;
     Jim_HashEntry *he;
@@ -5325,30 +5319,25 @@ static int SetReferenceFromAny(Jim_Interp *interp, Jim_Obj *objPtr)
 
     /* Get the string representation */
     str = Jim_GetString(objPtr, &len);
+    if (str[0] == ':' && str[1] == ':') {
+        str +=2;
+        len -= 2;
+    }
     /* Check if it looks like a reference */
-    if (len < JIM_REFERENCE_SPACE)
-        goto badformat;
-    /* Trim spaces */
-    start = str;
-    end = str + len - 1;
-    while (*start == ' ')
-        start++;
-    while (*end == ' ' && end > start)
-        end--;
-    if (end - start + 1 != JIM_REFERENCE_SPACE)
+    if (len != JIM_REFERENCE_SPACE)
         goto badformat;
     /* <reference.<1234567>.%020> */
-    if (memcmp(start, "<reference.<", 12) != 0)
+    if (memcmp(str, "<reference.<", 12) != 0)
         goto badformat;
-    if (start[12 + JIM_REFERENCE_TAGLEN] != '>' || end[0] != '>')
+    if (str[12 + JIM_REFERENCE_TAGLEN] != '>' || str[len - 1] != '>')
         goto badformat;
     /* The tag can't contain chars other than a-zA-Z0-9 + '_'. */
     for (i = 0; i < JIM_REFERENCE_TAGLEN; i++) {
-        if (!isrefchar(start[12 + i]))
+        if (!isrefchar(str[12 + i]))
             goto badformat;
     }
     /* Extract info from the reference. */
-    memcpy(refId, start + 14 + JIM_REFERENCE_TAGLEN, 20);
+    memcpy(refId, str + 14 + JIM_REFERENCE_TAGLEN, 20);
     refId[20] = '\0';
     /* Try to convert the ID into an unsigned long */
     value = strtoul(refId, &endptr, 10);
@@ -5460,6 +5449,36 @@ static const Jim_HashTableType JimRefMarkHashTableType = {
     NULL                        /* val destructor */
 };
 
+/* Adds a reference (id) to the marks table with the given reference count.
+ * If iscmd is 1, marks this as a command (so we can GC commands with refcount=1)
+ */
+static void JimMarkObject(Jim_Interp *interp, Jim_HashTable *marks, Jim_Obj *objPtr, unsigned long id, int checkcmd)
+{
+    if (checkcmd && objPtr->refCount == 1) {
+        /* This may be the object in the command table with refcount 1 */
+        Jim_HashEntry *he = Jim_FindHashEntry(&interp->commands, objPtr);
+        if (he && Jim_GetHashEntryKey(he) == objPtr) {
+            /* Yes, so no need to mark */
+            return;
+        }
+    }
+
+#ifdef JIM_DEBUG_GC
+    printf("MARK: %lu (type=%s, refcount=%d)\n", id, JimObjTypeName(objPtr), objPtr->refCount);
+#endif
+
+    Jim_AddHashEntry(marks, &id, NULL);
+}
+
+/**
+ * Returns 1 if id is in the marks table
+ * In this case, the object can't be collected.
+ */
+static int JimIsMarked(Jim_HashTable *marks, unsigned long id)
+{
+    return Jim_FindHashEntry(marks, &id) != NULL;
+}
+
 /* Performs the garbage collection. */
 int Jim_Collect(Jim_Interp *interp)
 {
@@ -5487,13 +5506,11 @@ int Jim_Collect(Jim_Interp *interp)
             int len;
 
             /* If the object is of type reference, to get the
-             * Id is simple... */
+             * Id is simple...
+             * Mark it, noting if it is in the command table
+             */
             if (objPtr->typePtr == &referenceObjType) {
-                Jim_AddHashEntry(&marks, &objPtr->internalRep.refValue.id, NULL);
-#ifdef JIM_DEBUG_GC
-                printf("MARK (reference): %d refcount: %d\n",
-                    (int)objPtr->internalRep.refValue.id, objPtr->refCount);
-#endif
+                JimMarkObject(interp, &marks, objPtr, objPtr->internalRep.refValue.id, 1);
                 objPtr = objPtr->nextObjPtr;
                 continue;
             }
@@ -5533,21 +5550,9 @@ int Jim_Collect(Jim_Interp *interp)
                 id = strtoul(p + 21, NULL, 10);
 
                 /* Ok, a reference for the given ID
-                 * was found. Mark it. */
-
-                /* But if this is a command in the command table with refCount 1
-                 * don't mark it since it can be deleted.
+                 * was found. Mark it, noting if it is in the command table
                  */
-                if (p == str && objPtr->refCount == 1 && Jim_FindHashEntry(&interp->commands, objPtr)) {
-#ifdef JIM_DEBUG_GC
-                    printf("No MARK: %lu - command with refcount=1\n", id);
-#endif
-                    break;
-                }
-                Jim_AddHashEntry(&marks, &id, objPtr);
-#ifdef JIM_DEBUG_GC
-                printf("MARK: %lu (type=%s)\n", id, JimObjTypeName(objPtr));
-#endif
+                JimMarkObject(interp, &marks, objPtr, id, p == str);
                 p += JIM_REFERENCE_SPACE;
             }
         }
@@ -5562,9 +5567,8 @@ int Jim_Collect(Jim_Interp *interp)
         Jim_Reference *refPtr;
 
         refId = he->key;
-        /* Check if in the mark phase we encountered
-         * this reference. */
-        if (Jim_FindHashEntry(&marks, refId) == NULL) {
+
+        if (!JimIsMarked(&marks, *refId)) {
 #ifdef JIM_DEBUG_GC
             printf("COLLECTING %d\n", (int)*refId);
 #endif
@@ -6172,11 +6176,11 @@ static const Jim_ObjType doubleObjType = {
     JIM_TYPE_NONE,
 };
 
-#ifndef HAVE_ISNAN
+#ifndef HAVE_DECL_ISNAN
 #undef isnan
 #define isnan(X) ((X) != (X))
 #endif
-#ifndef HAVE_ISINF
+#ifndef HAVE_DECL_ISINF
 #undef isinf
 #define isinf(X) (1.0 / (X) == 0.0)
 #endif
@@ -12095,6 +12099,8 @@ static int Jim_UnsetCoreCommand(Jim_Interp *interp, int argc, Jim_Obj *const *ar
         }
         i++;
     }
+
+    Jim_SetEmptyResult(interp);
     return JIM_OK;
 }
 
@@ -14523,7 +14529,7 @@ static int JimCatchTryHelper(Jim_Interp *interp, int istry, int argc, Jim_Obj *c
 {
     static const char * const wrongargs_catchtry[2] = {
         "?-?no?code ... --? script ?resultVarName? ?optionVarName?",
-        "?-?no?code ... --? script ?on codes vars script? ... ?finally script?"
+        "?-?no?code ... --? script ?on|trap codes vars script? ... ?finally script?"
     };
     int exitCode = 0;
     int i;
@@ -14532,7 +14538,8 @@ static int JimCatchTryHelper(Jim_Interp *interp, int istry, int argc, Jim_Obj *c
     Jim_Obj *finallyScriptObj = NULL;
     Jim_Obj *msgVarObj = NULL;
     Jim_Obj *optsVarObj = NULL;
-    Jim_Obj *onScriptObj = NULL;
+    Jim_Obj *handlerScriptObj = NULL;
+    Jim_Obj *errorCodeObj;
     int idx;
 
     /* Which return codes are ignored (passed through)? By default, only exit, eval and signal */
@@ -14611,9 +14618,11 @@ wrongargs:
     }
     interp->signal_level -= sig;
 
-    /* For try, we need to find both a matching return code and finally (if they exist)
+    errorCodeObj = Jim_GetGlobalVariableStr(interp, "errorCode", JIM_NONE);
+
+    /* For try, we need to find both a matching return or trap code and finally (if they exist)
      * Set: finallyScriptObj
-     *      onScriptObj
+     *      handlerScriptObj
      *      msgVarObj
      *      optsVarObj
      * Any of these can be NULL;
@@ -14621,31 +14630,60 @@ wrongargs:
     idx++;
     if (istry) {
         while (idx < argc) {
-            if (Jim_CompareStringImmediate(interp, argv[idx], "on")) {
-                int ret;
-                if (idx + 4 > argc) {
-                    goto wrongargs;
-                }
-                ret = JimMatchReturnCodes(interp, argv[idx + 1], exitCode);
-                if (ret > JIM_OK) {
-                    goto wrongargs;
-                }
-                if (ret == JIM_OK) {
-                    msgVarObj = Jim_ListGetIndex(interp, argv[idx + 2], 0);
-                    optsVarObj = Jim_ListGetIndex(interp, argv[idx + 2], 1);
-                    onScriptObj = argv[idx + 3];
-                }
-                idx += 4;
+            int option;
+            int ret;
+            static const char * const try_options[] = { "on", "trap", "finally", NULL };
+            enum { TRY_ON, TRY_TRAP, TRY_FINALLY, };
+
+            if (Jim_GetEnum(interp, argv[idx], try_options, &option, "handler", JIM_ERRMSG) != JIM_OK) {
+                return JIM_ERR;
             }
-            else if (Jim_CompareStringImmediate(interp, argv[idx], "finally")) {
-                if (idx + 2 != argc) {
-                    goto wrongargs;
-                }
-                finallyScriptObj = argv[idx + 1];
-                idx += 2;
-            }
-            else {
-                goto wrongargs;
+            switch (option) {
+                case TRY_ON:
+                case TRY_TRAP:
+                    if (idx + 4 > argc) {
+                        goto wrongargs;
+                    }
+                    if (option == TRY_ON) {
+                        ret = JimMatchReturnCodes(interp, argv[idx + 1], exitCode);
+                        if (ret > JIM_OK) {
+                            goto wrongargs;
+                        }
+                    }
+                    else if (errorCodeObj) {
+                        int len = Jim_ListLength(interp, argv[idx + 1]);
+                        int i;
+
+                        ret = JIM_OK;
+                        /* Try to match the sublist against errorcode */
+                        for (i = 0; i < len; i++) {
+                            Jim_Obj *matchObj = Jim_ListGetIndex(interp, argv[idx + 1], i);
+                            Jim_Obj *objPtr = Jim_ListGetIndex(interp, errorCodeObj, i);
+                            if (Jim_StringCompareObj(interp, matchObj, objPtr, 0) != 0) {
+                                ret = -1;
+                                break;
+                            }
+                        }
+                    }
+                    else {
+                        /* No errorCode, so no match for trap */
+                        ret = -1;
+                    }
+                    /* Save the details of the first match */
+                    if (ret == JIM_OK && handlerScriptObj == NULL) {
+                        msgVarObj = Jim_ListGetIndex(interp, argv[idx + 2], 0);
+                        optsVarObj = Jim_ListGetIndex(interp, argv[idx + 2], 1);
+                        handlerScriptObj = argv[idx + 3];
+                    }
+                    idx += 4;
+                    break;
+                case TRY_FINALLY:
+                    if (idx + 2 != argc) {
+                        goto wrongargs;
+                    }
+                    finallyScriptObj = argv[idx + 1];
+                    idx += 2;
+                    break;
             }
         }
     }
@@ -14695,24 +14733,22 @@ wrongargs:
         Jim_ListAppendElement(interp, optListObj, Jim_NewStringObj(interp, "-level", -1));
         Jim_ListAppendElement(interp, optListObj, Jim_NewIntObj(interp, interp->returnLevel));
         if (exitCode == JIM_ERR) {
-            Jim_Obj *errorCode;
             Jim_ListAppendElement(interp, optListObj, Jim_NewStringObj(interp, "-errorinfo",
                 -1));
             Jim_ListAppendElement(interp, optListObj, interp->stackTrace);
 
-            errorCode = Jim_GetGlobalVariableStr(interp, "errorCode", JIM_NONE);
-            if (errorCode) {
+            if (errorCodeObj) {
                 Jim_ListAppendElement(interp, optListObj, Jim_NewStringObj(interp, "-errorcode", -1));
-                Jim_ListAppendElement(interp, optListObj, errorCode);
+                Jim_ListAppendElement(interp, optListObj, errorCodeObj);
             }
         }
         if (Jim_SetVariable(interp, optsVarObj, optListObj) != JIM_OK) {
             ok = 0;
         }
     }
-    if (ok && onScriptObj) {
+    if (ok && handlerScriptObj) {
         /* Execute the on script. Any return code replaces the original. */
-        exitCode = Jim_EvalObj(interp, onScriptObj);
+        exitCode = Jim_EvalObj(interp, handlerScriptObj);
     }
 
     if (finallyScriptObj) {

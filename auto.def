@@ -1,7 +1,7 @@
 # vim:se syn=tcl:
 #
 
-define JIM_VERSION 81
+define JIM_VERSION 82
 
 options-defaults {
     silent-rules 1
@@ -10,6 +10,10 @@ options-defaults {
 # Note: modules which support options *must* be included before 'options'
 use cc cc-shared cc-db cc-lib pkg-config util
 use local
+
+# CFLAGS, CXXFLAGS only come from the user
+define CFLAGS [get-env CFLAGS ""]
+define CXXFLAGS [get-env CFLAGS ""]
 
 options {
     utf8            => "Include support for utf8-encoded strings"
@@ -153,7 +157,7 @@ if {[opt-bool extinfo]} {
 #   The optional args are pkg-config specifications (e.g. name1 >= 1.3.4)
 dict set extdb info {
     binary   { dep pack }
-    exec     { check {([have-feature vfork] && [have-feature waitpid]) || [have-feature system]} }
+    exec     { check {(([have-feature vfork] || [have-feature fork]) && [have-feature waitpid]) || [have-feature system]} }
     glob     { dep readdir }
     load     { check {[have-feature dlopen-compat] || [cc-check-function-in-lib dlopen dl]} libdep lib_dlopen }
     mk       { check {[check-metakit]} libdep lib_mk }
@@ -190,19 +194,18 @@ if {"-Werror" in [get-define CFLAGS] && [cctest -cflags -Wno-error]} {
 cc-check-types "long long"
 cc-check-sizeof int
 
-define CCOPTS ""
-define CXXOPTS ""
-if {[cctest -cflags -fno-unwind-tables]} {
-    define-append CCOPTS -fno-unwind-tables
-}
-if {[cctest -cflags -fno-asynchronous-unwind-tables]} {
-    define-append CCOPTS -fno-asynchronous-unwind-tables
+# Default optimisation
+define-append AS_CPPFLAGS -O2
+
+# check, but don't add to -cflags
+cc-with {} {
+	cc-check-flags -fno-unwind-tables -fno-asynchronous-unwind-tables
 }
 if {[opt-bool coverage]} {
     if {[cctest -link 1 -cflags --coverage]} {
         # When using coverage, disable ccache and compiler optimisation
         define CCACHE ""
-        define-append CCOPTS --coverage -O0
+        define-append AS_CFLAGS --coverage -O0
         define-append LDFLAGS --coverage
         define COVERAGE 1
         if {[cc-check-progs gcovr]} {
@@ -239,12 +242,23 @@ if {[cc-check-function-in-lib socket socket]} {
     define-append LDLIBS [get-define lib_socket]
 }
 
-cc-check-functions ualarm lstat fork vfork system select execvpe
+cc-check-functions ualarm lstat fork system select execvpe
 cc-check-functions geteuid mkstemp realpath isatty
 cc-check-functions regcomp waitpid sigaction sys_signame sys_siglist isascii
 cc-check-functions syslog opendir readlink sleep usleep pipe getaddrinfo utimes
-cc-check-functions shutdown socketpair isinf isnan link symlink fsync dup umask
+cc-check-functions shutdown socketpair link symlink fsync dup umask
 cc-check-functions localtime gmtime strptime clock_gettime
+
+cc-with {-includes math.h} {
+	cc-check-decls isinf isnan
+}
+
+if {[have-feature fork]} {
+	# Only use vfork if not deprecated
+	cc-with {-nooutput 1} {
+		cc-check-functions vfork
+	}
+}
 
 if {[cc-check-function-in-lib backtrace execinfo]} {
     define-append LDLIBS [get-define lib_backtrace]
@@ -271,7 +285,7 @@ cc-with {-includes fcntl.h} {
 cc-check-lfs
 cc-check-functions fseeko ftello
 
-define TCL_LIBRARY [get-define prefix]/lib/jim
+define TCL_LIBRARY [get-define libdir]/jim
 
 lassign [split [get-define host] -] host_cpu host_vendor host_os
 # Scrub revision from the host_os
@@ -285,6 +299,8 @@ switch -glob -- $host_os {
         define TCL_PLATFORM_OS $host_os
         define TCL_PLATFORM_PLATFORM windows
         define TCL_PLATFORM_PATH_SEPARATOR {;}
+        # Target WinXP or later. Should this be configurable?
+        define-append AS_CFLAGS -D_WIN32_WINNT=0x501 -Wno-deprecated-declarations
     }
     default {
         # Note that cygwin is considered a unix platform
@@ -368,7 +384,7 @@ proc opt-bool-or-full {opt} {
 if {[opt-bool-or-full utf8]} {
     msg-result "Enabling UTF-8"
     define JIM_UTF8
-    define-append CCOPTS -DUSE_UTF8
+    define-append AS_CFLAGS -DUSE_UTF8
     define PARSE_UNIDATA_FLAGS ""
     incr jimregexp
 } else {
@@ -397,7 +413,7 @@ if {[opt-bool-or-full ssl]} {
                 define JIM_SSL
                 define-append LDLIBS [pkg-config-get $pkg LIBS]
                 define-append LDFLAGS [pkg-config-get $pkg LDFLAGS]
-                define-append CCOPTS [pkg-config-get $pkg CFLAGS]
+                define-append AS_CFLAGS [pkg-config-get $pkg CFLAGS]
                 msg-result "Enabling SSL ($pkg)"
                 define-append PKG_CONFIG_REQUIRES $pkg
                 break
@@ -415,7 +431,7 @@ if {[opt-bool-or-full ssl]} {
     }
     # Later versions deprecate TLSv1_2_method, but older versions don't have TLS_method
     if {![cc-check-function-in-lib TLS_method ssl]} {
-        define-append CCOPTS -DUSE_TLSv1_2_method
+        define-append AS_CFLAGS -DUSE_TLSv1_2_method
     }
 }
 if {[opt-bool-or-full lineedit]} {
@@ -425,7 +441,7 @@ if {[opt-bool-or-full lineedit]} {
         define-append PARSE_UNIDATA_FLAGS -width
         lappend extra_objs linenoise.o
         if {[cc-check-inline] && [is-defined inline]} {
-            define-append CCOPTS -Dinline=[get-define inline]
+            define-append AS_CFLAGS -Dinline=[get-define inline]
         }
     }
 }
@@ -445,7 +461,7 @@ if {[opt-bool shared with-jim-shared]} {
 }
 define VERSION [format %.2f [expr {[get-define JIM_VERSION] / 100.0}]]
 define LIBSOEXT [format [get-define SH_SOEXTVER] [get-define VERSION]]
-if {[get-define libdir] ni {/lib /usr/lib}} {
+if {[get-define libdir] ni {/lib /usr/lib /usr/lib64}} {
     define SH_LINKRPATH_FLAGS [format [get-define SH_LINKRPATH] [get-define libdir]]
 } else {
     define SH_LINKRPATH_FLAGS ""
@@ -594,10 +610,10 @@ foreach mod $extinfo(module-c) {
         set obj [file rootname $src].o
         lappend objs $obj
         lappend lines "\t\$(ECHO)\t\"\tCC\t$obj\""
-        lappend lines "\t\$(Q)\$(CC) \$(CFLAGS) \$(SHOBJ_CFLAGS) -c -o $obj \$(srcdir)/$src"
+        lappend lines "\t\$(Q)\$(CC) \$(AS_CFLAGS) \$(AS_CPPFLAGS) \$(CFLAGS) \$(CPPFLAGS) \$(SHOBJ_CFLAGS) -c -o $obj \$(srcdir)/$src"
     }
     lappend lines "\t\$(ECHO)\t\"\tLDSO\t\$@\""
-    lappend lines "\t\$(Q)\$(CC) \$(CFLAGS) \$(LDFLAGS) \$(SHOBJ_LDFLAGS) -o \$@ $objs \$(SH_LIBJIM) $libs"
+    lappend lines "\t\$(Q)\$(CC) \$(AS_CFLAGS) \$(CFLAGS) \$(LDFLAGS) \$(SHOBJ_LDFLAGS) -o \$@ $objs \$(SH_LIBJIM) $libs"
     lappend lines ""
 }
 define BUILD_SHOBJS [join $lines \n]

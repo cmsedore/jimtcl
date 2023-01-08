@@ -68,7 +68,11 @@
 #endif
 
 # ifndef MAXPATHLEN
+# ifdef PATH_MAX
+# define MAXPATHLEN PATH_MAX
+# else
 # define MAXPATHLEN JIM_PATH_LEN
+# endif
 # endif
 
 #if defined(__MINGW32__) || defined(__MSYS__) || defined(_MSC_VER)
@@ -140,11 +144,13 @@ static const char *JimGetFileType(int mode)
 /*
  *----------------------------------------------------------------------
  *
- * StoreStatData --
+ * Jim_FileStoreStatData --
  *
  *  This is a utility procedure that breaks out the fields of a
  *  "stat" structure and stores them in textual form into the
- *  elements of an associative array.
+ *  elements of an associative array (dict).
+ *  The result is also returned as the Tcl result.
+ *  If varName is NULL, the result is only returned, not stored.
  *
  * Results:
  *  Returns a standard Tcl return value.  If an error occurs then
@@ -161,7 +167,7 @@ static void AppendStatElement(Jim_Interp *interp, Jim_Obj *listObj, const char *
     Jim_ListAppendElement(interp, listObj, Jim_NewIntObj(interp, value));
 }
 
-static int StoreStatData(Jim_Interp *interp, Jim_Obj *varName, const jim_stat_t *sb)
+int Jim_FileStoreStatData(Jim_Interp *interp, Jim_Obj *varName, const jim_stat_t *sb)
 {
     /* Just use a list to store the data */
     Jim_Obj *listObj = Jim_NewListObj(interp, NULL, 0);
@@ -849,7 +855,7 @@ static int file_cmd_lstat(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
     if (file_lstat(interp, argv[0], &sb) != JIM_OK) {
         return JIM_ERR;
     }
-    return StoreStatData(interp, argc == 2 ? argv[1] : NULL, &sb);
+    return Jim_FileStoreStatData(interp, argc == 2 ? argv[1] : NULL, &sb);
 }
 #else
 #define file_cmd_lstat file_cmd_stat
@@ -862,7 +868,7 @@ static int file_cmd_stat(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
     if (file_stat(interp, argv[0], &sb) != JIM_OK) {
         return JIM_ERR;
     }
-    return StoreStatData(interp, argc == 2 ? argv[1] : NULL, &sb);
+    return Jim_FileStoreStatData(interp, argc == 2 ? argv[1] : NULL, &sb);
 }
 
 static const jim_subcmd_type file_command_table[] = {
