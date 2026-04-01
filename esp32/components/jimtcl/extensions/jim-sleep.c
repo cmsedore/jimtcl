@@ -473,19 +473,28 @@ static int sleep_cmd_request(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
     }
 
     long timeout_ms = 5000;
+    int force = 0;
     int i;
-    for (i = 1; i < argc; i += 2) {
-        if (i + 1 >= argc) {
-            Jim_SetResultString(interp, "missing value for option", -1);
-            return JIM_ERR;
-        }
+    for (i = 1; i < argc; i++) {
         const char *opt = Jim_String(argv[i]);
-        if (strcmp(opt, "-timeout") == 0) {
-            if (Jim_GetLong(interp, argv[i + 1], &timeout_ms) != JIM_OK) return JIM_ERR;
+        if (strcmp(opt, "-force") == 0) {
+            force = 1;
+        } else if (strcmp(opt, "-timeout") == 0) {
+            if (i + 1 >= argc) {
+                Jim_SetResultString(interp, "missing value for -timeout", -1);
+                return JIM_ERR;
+            }
+            i++;
+            if (Jim_GetLong(interp, argv[i], &timeout_ms) != JIM_OK) return JIM_ERR;
         } else {
             Jim_SetResultFormatted(interp, "unknown option \"%s\"", opt);
             return JIM_ERR;
         }
+    }
+
+    if (force) {
+        ESP_LOGW(TAG, "FORCED sleep requested: mode=%s — skipping voter consultation", mode_str);
+        goto do_sleep;
     }
 
     ESP_LOGI(TAG, "Sleep requested: mode=%s, consulting voters...", mode_str);

@@ -134,8 +134,14 @@ task eval $t {gpio read 2}
 # Fire-and-forget
 task send $t {gpio write 2 1}
 
-# List all task VMs
+# List all task VMs (includes restart count)
 task list
+
+# Detailed info: state, restarts, circuit breaker
+task info $t
+
+# Restart a task (uses retained init script, subject to circuit breaker)
+task restart $t
 
 # Destroy a task
 task delete $t
@@ -197,6 +203,75 @@ sleep unregister                      ;# Remove self from voting
 3. Callback returns `"ok"` to approve, anything else is a veto (the string is the reason)
 4. All must approve. If any veto, sleep is cancelled and the vetoes are returned.
 5. If approved, all registered wake sources are configured, then the system sleeps.
+6. Use `sleep request light -force` to bypass voting (for watchdog/battery-critical use).
+
+### Watchdog (VM Health & Battery Protection)
+
+Monitors task VM responsiveness. Unresponsive VMs are restarted automatically,
+with a circuit breaker to prevent restart loops. Can force sleep when battery
+is critical, even if VMs are misbehaving.
+
+```tcl
+# --- Setup ---
+set t1 [task create -name "sensor" -stacksize 8192 { ... }]
+set t2 [task create -name "radio"  -stacksize 8192 { ... }]
+
+# Enable the watchdog: check every 10s, 5s deadline for responses
+watchdog enable -interval 10000 -deadline 5000
+
+# Tell it which tasks to monitor
+watchdog monitor $t1
+watchdog monitor $t2
+
+# Register a callback for critical events
+proc on_critical {event task_name details} {
+    puts "WATCHDOG: $event on $task_name: $details"
+    if {$event eq "breaker_open"} {
+        # A task has failed too many times — maybe time to force sleep
+        watchdog force_sleep light
+    }
+}
+watchdog oncritical on_critical
+
+# --- In long-running task scripts, call kick periodically ---
+# (automatically called when processing messages, but manual
+#  kick is needed inside long loops)
+while {1} {
+    # ... do work ...
+    watchdog kick
+    esp32 sleep 100
+}
+
+# --- Circuit breaker policy (per-task) ---
+watchdog policy $t1 -max_restarts 5 -window_ms 120000 -cooldown_ms 600000
+# Allow 5 restarts in 2min window, then 10min cooldown before trying again
+
+watchdog policy $t1                   ;# View current policy
+watchdog policy $t1 -reset 1          ;# Reset a tripped breaker manually
+
+# --- Battery-critical: force sleep NOW ---
+watchdog force_sleep deep             ;# Bypasses all voting
+# If no wake sources configured, adds a 60s emergency timer automatically
+
+# --- Status ---
+watchdog status
+# Returns: enabled 1 interval_ms 10000 deadline_ms 5000
+#   monitored {{slot 0 name sensor failures 0 wd_restarts 1 last_seen_ms 234} ...}
+
+watchdog disable
+```
+
+**Escalation path:**
+1. First unresponsive ping → `oncritical unresponsive` callback fires (warning)
+2. 3 consecutive failures → watchdog restarts the VM, `oncritical restart` fires
+3. Too many restarts in window → circuit breaker opens, `oncritical breaker_open` fires
+4. Circuit breaker cooldown expires → half-open: allows one trial restart
+5. Battery critical → `watchdog force_sleep` bypasses everything
+
+**Circuit breaker states:**
+- `closed` — normal operation, restarts allowed
+- `open` — too many failures, restarts blocked until cooldown expires
+- `half-open` — cooldown expired, one trial restart allowed
 
 ### ESP32 System
 
@@ -248,6 +323,7 @@ esp32/
       jim-esp-task.c           # Multi-VM FreeRTOS task management
       jim-ieee802154.c         # IEEE 802.15.4 radio (Zigbee/Thread)
       jim-sleep.c              # Coordinated sleep with cross-VM voting
+      jim-watchdog.c           # VM health monitor, circuit breaker, forced sleep
 ```
 
 The core Jim Tcl sources (`jim.c`, `jim-subcmd.c`, etc.) are compiled directly

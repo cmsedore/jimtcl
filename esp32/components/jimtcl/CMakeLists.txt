@@ -33,6 +33,7 @@ set(JIMTCL_ESP32_SRCS
     "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-esp-task.c"
     "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-ieee802154.c"
     "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-sleep.c"
+    "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-watchdog.c"
 )
 
 idf_component_register(
