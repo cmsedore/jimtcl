@@ -31,6 +31,7 @@ set(JIMTCL_ESP32_SRCS
     "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-i2c.c"
     "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-nvs.c"
     "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-esp-task.c"
+    "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-ieee802154.c"
 )
 
 idf_component_register(
@@ -46,6 +47,7 @@ idf_component_register(
         esp_timer
         vfs
         spiffs
+        ieee802154
 )
 
 # Compile definitions for ESP32 target

@@ -31,6 +31,7 @@ int Jim_InitStaticExtensions(Jim_Interp *interp)
     Jim_i2cInit(interp);
     Jim_nvsInit(interp);
     Jim_esp_taskInit(interp);
+    Jim_ieee802154Init(interp);
 
     return JIM_OK;
 }

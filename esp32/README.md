@@ -8,7 +8,7 @@ hardware peripherals.
 
 - **Full Jim Tcl interpreter** on ESP32 (~50-100 KB flash, ~20-50 KB RAM per VM)
 - **Multiple Tcl VMs** - run independent interpreters on separate FreeRTOS tasks
-- **Native ESP32 extensions**: GPIO, WiFi, I2C, NVS (non-volatile storage)
+- **Native ESP32 extensions**: GPIO, WiFi, I2C, IEEE 802.15.4, NVS (non-volatile storage)
 - **Interactive REPL** over UART for live development
 - **Boot script** support via NVS for headless operation
 
@@ -90,6 +90,30 @@ nvs delete $h "count"
 nvs close $h
 ```
 
+### IEEE 802.15.4 (Zigbee/Thread/Matter radio)
+
+Requires ESP32-C6, ESP32-H2, or other chip with 802.15.4 radio.
+
+```tcl
+ieee802154 init -channel 15 -panid 0xABCD -txpower 10  ;# Initialize radio
+
+ieee802154 config                                 ;# Show current config
+ieee802154 config -promiscuous 1                  ;# Enable promiscuous mode
+ieee802154 config -shortaddr 0x0001               ;# Set short address
+
+ieee802154 send {0x41 0x88 0x01 0xCD 0xAB 0xFF 0xFF 0x01 0x00 0x48 0x65 0x6C 0x6C 0x6F}
+                                                  ;# Transmit raw frame
+
+set frame [ieee802154 receive 10000]              ;# Receive (10s timeout)
+puts "RSSI: [dict get $frame rssi]"
+puts "Data: [dict get $frame data]"
+
+ieee802154 energydetect 5000                      ;# Energy detect (5ms)
+ieee802154 status                                 ;# Radio state
+
+ieee802154 deinit                                 ;# Disable radio
+```
+
 ### Task VMs (Multiple Interpreters)
 
 ```tcl
@@ -165,6 +189,7 @@ esp32/
       jim-i2c.c                # I2C master bus
       jim-nvs.c                # Non-volatile storage
       jim-esp-task.c           # Multi-VM FreeRTOS task management
+      jim-ieee802154.c         # IEEE 802.15.4 radio (Zigbee/Thread)
 ```
 
 The core Jim Tcl sources (`jim.c`, `jim-subcmd.c`, etc.) are compiled directly
