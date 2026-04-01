@@ -40,6 +40,7 @@ int Jim_i2cInit(Jim_Interp *interp);
 int Jim_nvsInit(Jim_Interp *interp);
 int Jim_esp_taskInit(Jim_Interp *interp);
 int Jim_ieee802154Init(Jim_Interp *interp);
+int Jim_sleepInit(Jim_Interp *interp);
 
 #ifdef __cplusplus
 }

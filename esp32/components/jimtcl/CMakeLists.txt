@@ -32,6 +32,7 @@ set(JIMTCL_ESP32_SRCS
     "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-nvs.c"
     "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-esp-task.c"
     "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-ieee802154.c"
+    "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-sleep.c"
 )
 
 idf_component_register(
@@ -45,6 +46,7 @@ idf_component_register(
         esp_event
         nvs_flash
         esp_timer
+        esp_hw_support
         vfs
         spiffs
         ieee802154

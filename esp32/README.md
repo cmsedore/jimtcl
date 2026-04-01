@@ -141,6 +141,63 @@ task list
 task delete $t
 ```
 
+### Sleep (Coordinated Power Management)
+
+Any VM can propose sleep. All registered VMs vote — unanimous approval required.
+
+```tcl
+# --- In the main interpreter ---
+
+# Register as a voter with a callback proc
+proc my_sleep_handler {mode} {
+    if {$mode eq "deep"} {
+        return "not ready"   ;# Veto deep sleep
+    }
+    return "ok"               ;# Approve light sleep
+}
+sleep register my_sleep_handler
+
+# Set wake sources (any registered VM can add these)
+sleep wake timer 5000000              ;# Wake after 5 seconds
+sleep wake gpio 0x04 high             ;# Wake on GPIO2 going high
+sleep wake uart 0                     ;# Wake on UART0 activity (light sleep only)
+sleep wake touch 0                    ;# Wake on touch pad 0
+
+# --- In a background task VM ---
+task eval $sensor_task {
+    proc sleep_vote {mode} {
+        # Check if we're mid-measurement
+        if {$::measuring} { return "measurement in progress" }
+        return "ok"
+    }
+    sleep register sleep_vote
+    sleep wake timer 10000000         ;# We want to wake within 10s
+}
+
+# --- Propose sleep (from any VM) ---
+set result [sleep request light -timeout 5000]
+# Returns: status ok wakeup_cause timer
+# Or:      status vetoed vetoes {{voter sensor reason "measurement in progress"}}
+
+# --- Management ---
+sleep voters                          ;# List all registered voters
+sleep wake list                       ;# List all wake sources from all VMs
+sleep wake clear                      ;# Remove this VM's wake sources
+sleep status                          ;# idle or pending
+sleep unregister                      ;# Remove self from voting
+```
+
+**Sleep modes:**
+- `light` — CPU paused, RAM retained, all tasks resume after wake. Returns wake cause.
+- `deep` — Only RTC memory survives. Chip reboots on wake (boot script runs again).
+
+**Vote protocol:**
+1. Requester calls `sleep request light|deep`
+2. Manager evaluates each voter's callback proc with the mode as argument
+3. Callback returns `"ok"` to approve, anything else is a veto (the string is the reason)
+4. All must approve. If any veto, sleep is cancelled and the vetoes are returned.
+5. If approved, all registered wake sources are configured, then the system sleeps.
+
 ### ESP32 System
 
 ```tcl
@@ -190,6 +247,7 @@ esp32/
       jim-nvs.c                # Non-volatile storage
       jim-esp-task.c           # Multi-VM FreeRTOS task management
       jim-ieee802154.c         # IEEE 802.15.4 radio (Zigbee/Thread)
+      jim-sleep.c              # Coordinated sleep with cross-VM voting
 ```
 
 The core Jim Tcl sources (`jim.c`, `jim-subcmd.c`, etc.) are compiled directly

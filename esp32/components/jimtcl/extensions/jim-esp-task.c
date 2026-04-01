@@ -116,6 +116,9 @@ static void tcl_task_entry(void *param)
     Jim_SetVariableStr(interp, "task::slot",
         Jim_NewIntObj(interp, slot_idx));
 
+    /* Expose the message queue so other extensions (e.g. sleep) can reach this VM */
+    Jim_SetAssocData(interp, "task.msg_queue", NULL, slot->msg_queue);
+
     slot->interp = interp;
 
     /* Run init script if provided */
