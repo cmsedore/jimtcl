@@ -56,6 +56,8 @@ typedef struct {
     QueueHandle_t rx_queue;       /* Received frames queue */
     SemaphoreHandle_t tx_done;    /* Signaled when TX completes */
     int tx_ok;                    /* Last TX result */
+    SemaphoreHandle_t ed_done;    /* Signaled when energy detect completes */
+    int8_t ed_power;              /* Energy detect result (dBm) */
 } ieee802154_state_t;
 
 static ieee802154_state_t radio_state = { 0 };
@@ -123,8 +125,14 @@ void esp_ieee802154_transmit_failed(const uint8_t *frame, esp_ieee802154_tx_erro
 
 void esp_ieee802154_energy_detect_done(int8_t power)
 {
-    /* Handled inline via esp_ieee802154_energy_detect - this is a stub
-     * in case the framework requires it. The sync API blocks internally. */
+    radio_state.ed_power = power;
+    if (radio_state.ed_done) {
+        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+        xSemaphoreGiveFromISR(radio_state.ed_done, &xHigherPriorityTaskWoken);
+        if (xHigherPriorityTaskWoken) {
+            portYIELD_FROM_ISR();
+        }
+    }
 }
 
 void esp_ieee802154_receive_failed(uint16_t error)
@@ -181,6 +189,9 @@ static int ieee802154_cmd_init(Jim_Interp *interp, int argc, Jim_Obj *const *arg
     }
     if (!radio_state.tx_done) {
         radio_state.tx_done = xSemaphoreCreateBinary();
+    }
+    if (!radio_state.ed_done) {
+        radio_state.ed_done = xSemaphoreCreateBinary();
     }
 
     esp_ieee802154_enable();
@@ -390,14 +401,16 @@ static int ieee802154_cmd_energydetect(Jim_Interp *interp, int argc, Jim_Obj *co
         return JIM_ERR;
     }
 
-    /* The ED result is returned asynchronously via callback.
-     * For simplicity we pause briefly then return. A more robust
-     * implementation would use a semaphore from the ED done callback. */
-    vTaskDelay(pdMS_TO_TICKS(duration_us / 1000 + 10));
+    /* Wait for the ED done callback to signal the result */
+    if (xSemaphoreTake(radio_state.ed_done, pdMS_TO_TICKS(duration_us / 1000 + 100)) != pdTRUE) {
+        Jim_SetResultString(interp, "energy detect timeout", -1);
+        return JIM_ERR;
+    }
 
     /* Re-enter receive mode */
     esp_ieee802154_receive();
 
+    Jim_SetResultInt(interp, radio_state.ed_power);
     return JIM_OK;
 }
 

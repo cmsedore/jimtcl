@@ -172,6 +172,10 @@ static int task_start_in_slot(int slot_idx)
 
     if (slot->msg_queue == NULL) {
         slot->msg_queue = xQueueCreate(TASK_MSG_QUEUE_LEN, sizeof(task_msg_t));
+        if (slot->msg_queue == NULL) {
+            ESP_LOGE(TAG, "Failed to create message queue for task '%s'", slot->name);
+            return -1;
+        }
     } else {
         xQueueReset(slot->msg_queue);
     }
@@ -419,10 +423,14 @@ static int task_cmd_eval(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
         return JIM_ERR;
     }
 
-    /* Wait for reply */
+    /* Wait for reply.
+     * On timeout we cannot safely delete the reply_queue because the task
+     * may still write to it. We leak the queue to avoid use-after-free.
+     * A future improvement could use a persistent per-task reply queue. */
     task_reply_t reply;
     if (xQueueReceive(reply_queue, &reply, pdMS_TO_TICKS(30000)) != pdTRUE) {
-        vQueueDelete(reply_queue);
+        /* Do NOT delete reply_queue here — the task may still send to it.
+         * Accept the small leak; the queue will be reclaimed on task delete. */
         Jim_SetResultString(interp, "timeout waiting for task reply", -1);
         return JIM_ERR;
     }

@@ -140,8 +140,9 @@ static void watchdog_check_task(wd_monitored_t *mon)
         return;
     }
 
-    /* Timeout — task is unresponsive */
-    vQueueDelete(reply_q);
+    /* Timeout — task is unresponsive.
+     * Do NOT delete reply_q here — the task may still write to it.
+     * Accept the small leak to avoid use-after-free. */
     mon->consecutive_failures++;
 
     ESP_LOGW(TAG, "Task '%s': unresponsive (failure #%d, deadline %lu ms)",

@@ -44,7 +44,8 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                                int32_t event_id, void *event_data)
 {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-        esp_wifi_connect();
+        /* Do not auto-connect here — let wifi_cmd_connect call esp_wifi_connect()
+         * explicitly. Auto-connecting interferes with scanning. */
     }
     else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         wifi_state.connected = 0;
@@ -114,7 +115,13 @@ static int wifi_cmd_connect(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
     wifi_state.retry_count = 0;
     ESP_ERROR_CHECK(esp_wifi_start());
 
+    /* Explicitly initiate connection (STA_START handler no longer auto-connects) */
+    esp_wifi_connect();
+
     ESP_LOGI(TAG, "Connecting to SSID: %s", ssid);
+
+    /* Clear any stale bits before waiting */
+    xEventGroupClearBits(wifi_state.event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
 
     /* Wait for connection or failure */
     EventBits_t bits = xEventGroupWaitBits(wifi_state.event_group,

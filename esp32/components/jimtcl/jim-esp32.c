@@ -276,7 +276,9 @@ int Jim_Esp32InteractivePrompt(Jim_Interp *interp)
             Jim_AppendString(interp, scriptObj, "\n", 1);
             Jim_AppendString(interp, scriptObj, line, -1);
         }
-        Jim_IncrRefCount(scriptObj);
+        if (!partial) {
+            Jim_IncrRefCount(scriptObj);
+        }
 
         if (Jim_ScriptIsComplete(interp, scriptObj, NULL)) {
             int retcode = Jim_EvalObj(interp, scriptObj);
@@ -299,9 +301,13 @@ int Jim_Esp32InteractivePrompt(Jim_Interp *interp)
                 fflush(stdout);
             }
         } else {
-            /* Incomplete script, accumulate more input */
+            /* Incomplete script - save content before releasing old object */
+            int slen;
+            const char *s = Jim_GetString(scriptObj, &slen);
+            Jim_Obj *newObj = Jim_NewStringObj(interp, s, slen);
+            Jim_IncrRefCount(newObj);
             Jim_DecrRefCount(interp, scriptObj);
-            scriptObj = Jim_NewStringObj(interp, Jim_String(scriptObj), -1);
+            scriptObj = newObj;
             partial = 1;
         }
     }

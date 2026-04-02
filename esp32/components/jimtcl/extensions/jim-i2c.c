@@ -22,6 +22,7 @@ static const char *TAG = "jim-i2c";
 #define I2C_MAX_PORTS 2
 
 static i2c_master_bus_handle_t bus_handles[I2C_MAX_PORTS] = { NULL, NULL };
+static long bus_freq[I2C_MAX_PORTS] = { 100000, 100000 };
 
 static int i2c_get_port(Jim_Interp *interp, Jim_Obj *obj, int *port)
 {
@@ -97,6 +98,7 @@ static int i2c_cmd_init(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
         return JIM_ERR;
     }
 
+    bus_freq[port] = freq;
     ESP_LOGI(TAG, "I2C port %d initialized: SDA=%d SCL=%d freq=%ld", port, sda, scl, freq);
     return JIM_OK;
 }
@@ -159,7 +161,7 @@ static int i2c_cmd_write(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
     i2c_device_config_t dev_cfg = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address = (uint16_t)addr,
-        .scl_speed_hz = 100000,
+        .scl_speed_hz = (uint32_t)bus_freq[port],
     };
     i2c_master_dev_handle_t dev_handle;
     esp_err_t err = i2c_master_bus_add_device(bus_handles[port], &dev_cfg, &dev_handle);
@@ -214,7 +216,7 @@ static int i2c_cmd_read(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
     i2c_device_config_t dev_cfg = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address = (uint16_t)addr,
-        .scl_speed_hz = 100000,
+        .scl_speed_hz = (uint32_t)bus_freq[port],
     };
     i2c_master_dev_handle_t dev_handle;
     esp_err_t err = i2c_master_bus_add_device(bus_handles[port], &dev_cfg, &dev_handle);
