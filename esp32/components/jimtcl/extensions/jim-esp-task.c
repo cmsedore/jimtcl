@@ -152,6 +152,10 @@ static void tcl_task_entry(void *param)
         slot->in_use = 0;
         vQueueDelete(slot->msg_queue);
         slot->msg_queue = NULL;
+        if (slot->reply_queue) {
+            vQueueDelete(slot->reply_queue);
+            slot->reply_queue = NULL;
+        }
         if (slot->retained_script) {
             free(slot->retained_script);
             slot->retained_script = NULL;
@@ -178,6 +182,17 @@ static int task_start_in_slot(int slot_idx)
         }
     } else {
         xQueueReset(slot->msg_queue);
+    }
+
+    if (slot->reply_queue == NULL) {
+        slot->reply_queue = xQueueCreate(1, sizeof(task_reply_t));
+        if (slot->reply_queue == NULL) {
+            ESP_LOGE(TAG, "Failed to create reply queue for task '%s'", slot->name);
+            return -1;
+        }
+    } else {
+        /* Drain any stale reply from a previous timed-out eval */
+        xQueueReset(slot->reply_queue);
     }
 
     slot->state = TASK_STATE_STARTING;
@@ -404,38 +419,36 @@ static int task_cmd_eval(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 
     const char *script = Jim_String(argv[1]);
 
-    /* Create a temporary reply queue */
-    QueueHandle_t reply_queue = xQueueCreate(1, sizeof(task_reply_t));
-    if (!reply_queue) {
-        Jim_SetResultString(interp, "failed to create reply queue", -1);
+    if (!slot->reply_queue) {
+        Jim_SetResultString(interp, "task has no reply queue", -1);
         return JIM_ERR;
+    }
+
+    /* Drain any stale reply from a previous timed-out eval */
+    task_reply_t stale;
+    while (xQueueReceive(slot->reply_queue, &stale, 0) == pdTRUE) {
+        if (stale.result) free(stale.result);
     }
 
     task_msg_t msg;
     msg.type = TASK_MSG_EVAL;
     msg.script = strdup(script);
-    msg.reply_queue = reply_queue;
+    msg.reply_queue = slot->reply_queue;
 
     if (xQueueSend(slot->msg_queue, &msg, pdMS_TO_TICKS(5000)) != pdTRUE) {
         free(msg.script);
-        vQueueDelete(reply_queue);
         Jim_SetResultString(interp, "task message queue full", -1);
         return JIM_ERR;
     }
 
-    /* Wait for reply.
-     * On timeout we cannot safely delete the reply_queue because the task
-     * may still write to it. We leak the queue to avoid use-after-free.
-     * A future improvement could use a persistent per-task reply queue. */
+    /* Wait for reply using the persistent per-slot reply queue.
+     * On timeout the queue stays valid for the task to write to later;
+     * stale replies are drained on next eval. */
     task_reply_t reply;
-    if (xQueueReceive(reply_queue, &reply, pdMS_TO_TICKS(30000)) != pdTRUE) {
-        /* Do NOT delete reply_queue here — the task may still send to it.
-         * Accept the small leak; the queue will be reclaimed on task delete. */
+    if (xQueueReceive(slot->reply_queue, &reply, pdMS_TO_TICKS(30000)) != pdTRUE) {
         Jim_SetResultString(interp, "timeout waiting for task reply", -1);
         return JIM_ERR;
     }
-
-    vQueueDelete(reply_queue);
 
     if (reply.result) {
         Jim_SetResultString(interp, reply.result, -1);
@@ -477,6 +490,7 @@ static int task_cmd_delete(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
     xSemaphoreTake(task_slots_mutex, portMAX_DELAY);
     slot->in_use = 0;
     if (slot->msg_queue) { vQueueDelete(slot->msg_queue); slot->msg_queue = NULL; }
+    if (slot->reply_queue) { vQueueDelete(slot->reply_queue); slot->reply_queue = NULL; }
     if (slot->retained_script) { free(slot->retained_script); slot->retained_script = NULL; }
     xSemaphoreGive(task_slots_mutex);
 

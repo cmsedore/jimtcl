@@ -192,6 +192,10 @@ static int ieee802154_cmd_init(Jim_Interp *interp, int argc, Jim_Obj *const *arg
     }
     if (!radio_state.ed_done) {
         radio_state.ed_done = xSemaphoreCreateBinary();
+        if (!radio_state.ed_done) {
+            Jim_SetResultString(interp, "failed to create energy detect semaphore", -1);
+            return JIM_ERR;
+        }
     }
 
     esp_ieee802154_enable();
@@ -394,6 +398,10 @@ static int ieee802154_cmd_energydetect(Jim_Interp *interp, int argc, Jim_Obj *co
         Jim_SetResultString(interp, "duration must be 128-1000000 microseconds", -1);
         return JIM_ERR;
     }
+
+    /* Drain any stale semaphore signal from a previous timed-out ED */
+    xSemaphoreTake(radio_state.ed_done, 0);
+    radio_state.ed_power = 0;
 
     esp_err_t err = esp_ieee802154_energy_detect((uint32_t)duration_us);
     if (err != ESP_OK) {

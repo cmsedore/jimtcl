@@ -113,15 +113,16 @@ static int wifi_cmd_connect(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     wifi_state.retry_count = 0;
+
+    /* Clear any stale bits before starting WiFi and connecting */
+    xEventGroupClearBits(wifi_state.event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
+
     ESP_ERROR_CHECK(esp_wifi_start());
 
     /* Explicitly initiate connection (STA_START handler no longer auto-connects) */
     esp_wifi_connect();
 
     ESP_LOGI(TAG, "Connecting to SSID: %s", ssid);
-
-    /* Clear any stale bits before waiting */
-    xEventGroupClearBits(wifi_state.event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
 
     /* Wait for connection or failure */
     EventBits_t bits = xEventGroupWaitBits(wifi_state.event_group,

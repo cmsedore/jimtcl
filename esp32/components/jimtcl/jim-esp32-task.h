@@ -69,6 +69,7 @@ typedef struct {
     int in_use;
     TaskHandle_t task_handle;
     QueueHandle_t msg_queue;
+    QueueHandle_t reply_queue;          /* Persistent reply queue for sync eval */
     char name[16];
     struct Jim_Interp *interp;
     char *retained_script;          /* Kept for restart (heap-allocated) */

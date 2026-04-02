@@ -77,6 +77,11 @@ static int i2c_cmd_init(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
         return JIM_ERR;
     }
 
+    if (freq <= 0 || freq > 1000000) {
+        Jim_SetResultString(interp, "frequency must be 1-1000000 Hz", -1);
+        return JIM_ERR;
+    }
+
     /* Deinit if already initialized */
     if (bus_handles[port] != NULL) {
         i2c_del_master_bus(bus_handles[port]);
