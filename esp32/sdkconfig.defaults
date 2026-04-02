@@ -1,0 +1,24 @@
+# Jim Tcl ESP32 default SDK configuration
+
+# Increase main task stack size for Tcl interpreter
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
+
+# Enable UART console
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+
+# Enable VFS for file I/O support
+CONFIG_VFS_SUPPORT_IO=y
+
+# Enable NVS for persistent storage
+CONFIG_NVS_ENCRYPTION=n
+
+# Enable WiFi
+CONFIG_ESP_WIFI_ENABLED=y
+
+# Partition table - use custom to include storage partition
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# Enable FreeRTOS stats for task monitoring
+CONFIG_FREERTOS_USE_TRACE_FACILITY=y
+CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y
