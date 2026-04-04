@@ -6,6 +6,7 @@
 
 #include "jim.h"
 #include "jim-esp32.h"
+#include "soc/soc_caps.h"
 
 /* Standard Jim extensions compiled in */
 extern int Jim_packageInit(Jim_Interp *interp);
@@ -31,7 +32,9 @@ int Jim_InitStaticExtensions(Jim_Interp *interp)
     Jim_i2cInit(interp);
     Jim_nvsInit(interp);
     Jim_esp_taskInit(interp);
+#if defined(SOC_IEEE802154_SUPPORTED) && SOC_IEEE802154_SUPPORTED
     Jim_ieee802154Init(interp);
+#endif
     Jim_sleepInit(interp);
     Jim_watchdogInit(interp);
 

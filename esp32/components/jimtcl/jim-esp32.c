@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "esp_system.h"
+#include "esp_chip_info.h"
 #include "esp_timer.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -36,34 +37,6 @@ static void *JimEsp32Allocator(void *ptr, size_t size)
         return heap_caps_realloc(ptr, size, MALLOC_CAP_DEFAULT);
     }
     return heap_caps_malloc(size, MALLOC_CAP_DEFAULT);
-}
-
-/* ---------------------------------------------------------------------------
- * Time support (jim.c calls Jim_GetTimeUsec)
- * ---------------------------------------------------------------------------*/
-
-jim_wide Jim_GetTimeUsec(unsigned type)
-{
-    /* esp_timer_get_time() returns microseconds since boot (monotonic) */
-    (void)type;
-    return (jim_wide)esp_timer_get_time();
-}
-
-/* ---------------------------------------------------------------------------
- * Environment stubs (jim.c references these)
- * ---------------------------------------------------------------------------*/
-
-static char *empty_environ[] = { NULL };
-
-char **Jim_GetEnviron(void)
-{
-    return empty_environ;
-}
-
-void Jim_SetEnviron(char **env)
-{
-    (void)env;
-    /* No-op on ESP32 - no process environment */
 }
 
 /* ---------------------------------------------------------------------------
@@ -252,7 +225,7 @@ int Jim_Esp32InteractivePrompt(Jim_Interp *interp)
     int partial = 0;
 
     ESP_LOGI(TAG, "Jim Tcl %d.%d on ESP32 - Interactive Mode",
-             JIM_VERSION / 100, JIM_VERSION % 100);
+             JIM_ABI_VERSION / 100, JIM_ABI_VERSION % 100);
     ESP_LOGI(TAG, "Free heap: %lu bytes", (unsigned long)esp_get_free_heap_size());
 
     while (1) {

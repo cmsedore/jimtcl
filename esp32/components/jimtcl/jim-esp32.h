@@ -7,6 +7,7 @@
 #define JIM_ESP32_H
 
 #include <jim.h>
+#include "soc/soc_caps.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -39,7 +40,9 @@ int Jim_wifiInit(Jim_Interp *interp);
 int Jim_i2cInit(Jim_Interp *interp);
 int Jim_nvsInit(Jim_Interp *interp);
 int Jim_esp_taskInit(Jim_Interp *interp);
+#if defined(SOC_IEEE802154_SUPPORTED) && SOC_IEEE802154_SUPPORTED
 int Jim_ieee802154Init(Jim_Interp *interp);
+#endif
 int Jim_sleepInit(Jim_Interp *interp);
 int Jim_watchdogInit(Jim_Interp *interp);
 

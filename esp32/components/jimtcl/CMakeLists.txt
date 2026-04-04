@@ -31,31 +31,38 @@ set(JIMTCL_ESP32_SRCS
     "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-i2c.c"
     "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-nvs.c"
     "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-esp-task.c"
-    "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-ieee802154.c"
     "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-sleep.c"
     "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-watchdog.c"
 )
 
+set(JIMTCL_REQUIRES
+    driver
+    esp_wifi
+    esp_event
+    nvs_flash
+    esp_timer
+    esp_hw_support
+    vfs
+    spiffs
+)
+
+# IEEE 802.15.4 is only available on ESP32-C6 and ESP32-H2
+if(IDF_TARGET STREQUAL "esp32c6" OR IDF_TARGET STREQUAL "esp32h2")
+    list(APPEND JIMTCL_ESP32_SRCS
+        "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-ieee802154.c")
+    list(APPEND JIMTCL_REQUIRES ieee802154)
+endif()
+
 idf_component_register(
     SRCS ${JIMTCL_CORE_SRCS} ${JIMTCL_ESP32_SRCS}
     INCLUDE_DIRS
-        "${JIMTCL_ROOT}"
         "${CMAKE_CURRENT_LIST_DIR}"
-    REQUIRES
-        driver
-        esp_wifi
-        esp_event
-        nvs_flash
-        esp_timer
-        esp_hw_support
-        vfs
-        spiffs
-        ieee802154
+        "${JIMTCL_ROOT}"
+    REQUIRES ${JIMTCL_REQUIRES}
 )
 
 # Compile definitions for ESP32 target
 target_compile_definitions(${COMPONENT_LIB} PUBLIC
-    HAVE_NO_AUTOCONF
     JIM_ESP32
 )
 
@@ -64,4 +71,5 @@ target_compile_options(${COMPONENT_LIB} PRIVATE
     -Wno-unused-parameter
     -Wno-sign-compare
     -Wno-old-style-declaration
+    -Wno-implicit-fallthrough
 )
