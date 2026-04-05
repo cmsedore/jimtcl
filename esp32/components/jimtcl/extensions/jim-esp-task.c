@@ -67,6 +67,51 @@ static int find_free_slot(void)
     return -1;
 }
 
+int task_find_slot_by_name(const char *name)
+{
+    for (int i = 0; i < TASK_MAX_SLOTS; i++) {
+        if (task_slots[i].in_use && strcmp(task_slots[i].name, name) == 0)
+            return i;
+    }
+    return -1;
+}
+
+int task_send_to_name(const char *target_name, const char *script)
+{
+    int idx = task_find_slot_by_name(target_name);
+    if (idx < 0) return -1;
+
+    task_slot_t *target = &task_slots[idx];
+    if (!target->msg_queue || target->state != TASK_STATE_RUNNING) return -1;
+
+    task_msg_t msg;
+    msg.type = TASK_MSG_SEND;
+    msg.script = strdup(script);
+    msg.reply_queue = NULL;
+
+    if (xQueueSend(target->msg_queue, &msg, pdMS_TO_TICKS(500)) != pdTRUE) {
+        free(msg.script);
+        return -1;
+    }
+    return 0;
+}
+
+/* Best-effort error notification: send a script to the named target task.
+ * Drops silently if the target doesn't exist or its queue is full. */
+static void task_notify_error(task_slot_t *slot, const char *event, const char *errmsg)
+{
+    if (slot->error_callback[0] == '\0') return;
+
+    char script[256];
+    snprintf(script, sizeof(script), "%s %s %s {%s}",
+             slot->error_callback, event, slot->name, errmsg ? errmsg : "");
+
+    if (task_send_to_name(slot->error_callback_target, script) != 0) {
+        ESP_LOGW(TAG, "Error callback delivery failed for task '%s' -> '%s'",
+                 slot->name, slot->error_callback_target);
+    }
+}
+
 /* ---------------------------------------------------------------------------
  * Task entry point - runs a Tcl interpreter in its own FreeRTOS task
  * ---------------------------------------------------------------------------*/
@@ -103,6 +148,10 @@ static void tcl_task_entry(void *param)
         if (ret == JIM_ERR) {
             const char *err = Jim_String(Jim_GetResult(interp));
             ESP_LOGE(TAG, "Task '%s' init script error: %s", slot->name, err);
+            task_notify_error(slot, "init", err);
+            if (slot->auto_restart) {
+                goto task_cleanup;
+            }
         }
     }
 
@@ -135,10 +184,12 @@ static void tcl_task_entry(void *param)
             else if (msg.type == TASK_MSG_SEND && retcode == JIM_ERR) {
                 const char *err = Jim_String(Jim_GetResult(interp));
                 ESP_LOGE(TAG, "Task '%s' async error: %s", slot->name, err);
+                task_notify_error(slot, "eval", err);
             }
         }
     }
 
+task_cleanup:
     /* Cleanup */
     ESP_LOGI(TAG, "Tcl task '%s' shutting down", slot->name);
     Jim_FreeInterp(interp);
@@ -146,6 +197,24 @@ static void tcl_task_entry(void *param)
     xSemaphoreTake(task_slots_mutex, portMAX_DELAY);
     slot->interp = NULL;
     slot->state = TASK_STATE_STOPPED;
+
+    /* Auto-restart: treat as restart_pending so the slot is preserved */
+    if (slot->auto_restart && !slot->restart_pending) {
+        slot->restart_pending = 1;
+        xSemaphoreGive(task_slots_mutex);
+
+        task_notify_error(slot, "restart", "auto-restarting");
+        int ret = task_restart(slot_idx);
+        if (ret == -2) {
+            task_notify_error(slot, "breaker", "circuit breaker open");
+            ESP_LOGE(TAG, "Auto-restart blocked by circuit breaker for '%s'", slot->name);
+        } else if (ret != 0) {
+            ESP_LOGE(TAG, "Auto-restart failed for '%s'", slot->name);
+        }
+        vTaskDelete(NULL);
+        return; /* not reached */
+    }
+
     /* Don't free retained_script or reset in_use here — restart may reuse them */
     if (!slot->restart_pending) {
         /* Normal shutdown — fully clean up */
@@ -334,6 +403,9 @@ static int task_cmd_create(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
     const char *name = NULL;
     long stacksize = TASK_DEFAULT_STACK;
     long priority = TASK_DEFAULT_PRIORITY;
+    long autorestart = 0;
+    const char *callback_proc = NULL;
+    const char *callback_target = NULL;
     const char *script = NULL;
     int i;
 
@@ -348,6 +420,21 @@ static int task_cmd_create(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
         }
         else if (strcmp(arg, "-priority") == 0 && i + 1 < argc) {
             if (Jim_GetLong(interp, argv[++i], &priority) != JIM_OK) return JIM_ERR;
+        }
+        else if (strcmp(arg, "-autorestart") == 0 && i + 1 < argc) {
+            if (Jim_GetLong(interp, argv[++i], &autorestart) != JIM_OK) return JIM_ERR;
+        }
+        else if (strcmp(arg, "-callback") == 0 && i + 1 < argc) {
+            /* Value is a two-element list: {procname target_task} */
+            Jim_Obj *cbObj = argv[++i];
+            int cblen = Jim_ListLength(interp, cbObj);
+            if (cblen != 2) {
+                Jim_SetResultString(interp,
+                    "-callback requires a list of {procname target_task}", -1);
+                return JIM_ERR;
+            }
+            callback_proc = Jim_String(Jim_ListGetIndex(interp, cbObj, 0));
+            callback_target = Jim_String(Jim_ListGetIndex(interp, cbObj, 1));
         }
         else {
             /* Remaining arg is the init script */
@@ -380,6 +467,17 @@ static int task_cmd_create(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
         slot->name[sizeof(slot->name) - 1] = '\0';
     } else {
         snprintf(slot->name, sizeof(slot->name), "tcl%d", slot_idx);
+    }
+
+    /* Auto-restart and error callback */
+    slot->auto_restart = (int)autorestart;
+    if (callback_proc) {
+        strncpy(slot->error_callback, callback_proc, sizeof(slot->error_callback) - 1);
+        slot->error_callback[sizeof(slot->error_callback) - 1] = '\0';
+    }
+    if (callback_target) {
+        strncpy(slot->error_callback_target, callback_target, sizeof(slot->error_callback_target) - 1);
+        slot->error_callback_target[sizeof(slot->error_callback_target) - 1] = '\0';
     }
 
     /* Retain a copy of the init script for restart */

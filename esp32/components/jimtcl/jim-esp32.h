@@ -46,6 +46,20 @@ int Jim_ieee802154Init(Jim_Interp *interp);
 int Jim_sleepInit(Jim_Interp *interp);
 int Jim_watchdogInit(Jim_Interp *interp);
 
+/* Protocol extensions (Kconfig-gated) */
+#ifdef CONFIG_JIM_EXT_HTTP
+int Jim_httpInit(Jim_Interp *interp);
+#endif
+#ifdef CONFIG_JIM_EXT_MQTT
+int Jim_mqttInit(Jim_Interp *interp);
+#endif
+#ifdef CONFIG_JIM_EXT_WEBSOCKET
+int Jim_websocketInit(Jim_Interp *interp);
+#endif
+#ifdef CONFIG_JIM_EXT_JSON
+int Jim_jsonInit(Jim_Interp *interp);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

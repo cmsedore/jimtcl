@@ -1,0 +1,31 @@
+menu "Jim Tcl Extensions"
+
+    config JIM_EXT_HTTP
+        bool "Enable HTTP client extension"
+        default y
+        help
+            Adds the [http] command for HTTP GET/POST/PUT/DELETE
+            with synchronous and async (callback) modes.
+
+    config JIM_EXT_WEBSOCKET
+        bool "Enable WebSocket client extension"
+        default n
+        help
+            Adds the [ws] command for WebSocket connections.
+            Pulls in the esp_websocket_client managed component.
+
+    config JIM_EXT_MQTT
+        bool "Enable MQTT client extension"
+        default y
+        help
+            Adds the [mqtt] command for MQTT publish/subscribe.
+
+    config JIM_EXT_JSON
+        bool "Enable JSON extension (cJSON)"
+        default y
+        help
+            Adds the [json] command for encoding/decoding JSON using
+            ESP-IDF's bundled cJSON library. Also enables -json flags
+            in the HTTP, MQTT, and WebSocket extensions.
+
+endmenu

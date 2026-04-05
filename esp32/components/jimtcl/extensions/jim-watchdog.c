@@ -55,6 +55,7 @@
 #include "freertos/semphr.h"
 #include "esp_timer.h"
 #include "esp_sleep.h"
+#include "soc/soc_caps.h"
 #include "esp_log.h"
 
 static const char *TAG = "jim-watchdog";
@@ -471,7 +472,9 @@ static int wd_cmd_force_sleep(Jim_Interp *interp, int argc, Jim_Obj *const *argv
                     }
                     break;
                 case WAKE_SOURCE_TOUCH:
+#if SOC_PM_SUPPORT_TOUCH_SENSOR_WAKEUP
                     esp_sleep_enable_touchpad_wakeup();
+#endif
                     break;
             }
         }

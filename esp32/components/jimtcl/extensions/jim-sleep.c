@@ -62,6 +62,7 @@
 #include "jim-esp32-sleep.h"
 #include "jim-esp32-task.h"
 #include "esp_sleep.h"
+#include "soc/soc_caps.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -383,10 +384,15 @@ static int configure_wake_sources(Jim_Interp *interp, sleep_mode_t mode)
                 break;
 
             case WAKE_SOURCE_TOUCH:
+#if SOC_PM_SUPPORT_TOUCH_SENSOR_WAKEUP
                 err = esp_sleep_enable_touchpad_wakeup();
                 if (err == ESP_OK) {
                     ESP_LOGI(TAG, "Wake source: touch pad %d", ws->config.touch.touch_pad);
                 }
+#else
+                ESP_LOGW(TAG, "Touch wakeup not supported on this chip, skipping");
+                continue;
+#endif
                 break;
         }
 

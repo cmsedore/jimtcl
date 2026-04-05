@@ -78,6 +78,11 @@ typedef struct {
     task_state_t state;
     int64_t last_activity_us;       /* Timestamp of last message processed */
 
+    /* Auto-restart and error callback */
+    int auto_restart;               /* 1 = auto-restart on exit/error */
+    char error_callback[64];        /* Tcl proc name to invoke on failure */
+    char error_callback_target[16]; /* Name of the task to send callback to */
+
     /* Restart tracking */
     int restart_count;              /* Total restarts over lifetime */
     int restart_pending;            /* Set before kill to preserve retained_script */
@@ -103,6 +108,13 @@ int task_force_kill(int slot_idx);
  *  -1  = general failure
  *  -2  = circuit breaker open */
 int task_restart(int slot_idx);
+
+/* Find a task slot by name. Returns slot index or -1 if not found. */
+int task_find_slot_by_name(const char *name);
+
+/* Send a fire-and-forget script to a task identified by name.
+ * Returns 0 on success, -1 if target not found or queue full. */
+int task_send_to_name(const char *target_name, const char *script);
 
 #ifdef __cplusplus
 }

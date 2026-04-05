@@ -14,6 +14,8 @@
 #include "esp_system.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
+#include "esp_vfs_dev.h"
+#include "driver/uart.h"
 
 #include "jim.h"
 #include "jim-esp32.h"
@@ -71,6 +73,14 @@ void app_main(void)
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+
+    /* Install UART driver and configure VFS for linenoise-based REPL.
+     * This gives us proper line editing, echo, and history. */
+    setvbuf(stdin, NULL, _IONBF, 0);
+    uart_driver_install(CONFIG_ESP_CONSOLE_UART_NUM, 4096, 0, 0, NULL, 0);
+    esp_vfs_dev_uart_use_driver(CONFIG_ESP_CONSOLE_UART_NUM);
+    esp_vfs_dev_uart_port_set_rx_line_endings(CONFIG_ESP_CONSOLE_UART_NUM, ESP_LINE_ENDINGS_CR);
+    esp_vfs_dev_uart_port_set_tx_line_endings(CONFIG_ESP_CONSOLE_UART_NUM, ESP_LINE_ENDINGS_CRLF);
 
     ESP_LOGI(TAG, "=================================");
     ESP_LOGI(TAG, "  Jim Tcl for ESP32");

@@ -38,5 +38,19 @@ int Jim_InitStaticExtensions(Jim_Interp *interp)
     Jim_sleepInit(interp);
     Jim_watchdogInit(interp);
 
+    /* Protocol extensions (Kconfig-gated) */
+#ifdef CONFIG_JIM_EXT_HTTP
+    Jim_httpInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_MQTT
+    Jim_mqttInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_WEBSOCKET
+    Jim_websocketInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_JSON
+    Jim_jsonInit(interp);
+#endif
+
     return JIM_OK;
 }

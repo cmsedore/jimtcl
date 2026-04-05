@@ -44,6 +44,10 @@ set(JIMTCL_REQUIRES
     esp_hw_support
     vfs
     spiffs
+    console
+    esp_http_client
+    mqtt
+    json
 )
 
 # IEEE 802.15.4 is only available on ESP32-C6 and ESP32-H2
@@ -51,6 +55,29 @@ if(IDF_TARGET STREQUAL "esp32c6" OR IDF_TARGET STREQUAL "esp32h2")
     list(APPEND JIMTCL_ESP32_SRCS
         "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-ieee802154.c")
     list(APPEND JIMTCL_REQUIRES ieee802154)
+endif()
+
+# Kconfig-gated protocol extensions
+if(CONFIG_JIM_EXT_HTTP)
+    list(APPEND JIMTCL_ESP32_SRCS
+        "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-http.c")
+    list(APPEND JIMTCL_REQUIRES esp_http_client)
+endif()
+
+if(CONFIG_JIM_EXT_MQTT)
+    list(APPEND JIMTCL_ESP32_SRCS
+        "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-mqtt.c")
+    list(APPEND JIMTCL_REQUIRES mqtt)
+endif()
+
+if(CONFIG_JIM_EXT_WEBSOCKET)
+    list(APPEND JIMTCL_ESP32_SRCS
+        "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-websocket.c")
+endif()
+
+if(CONFIG_JIM_EXT_JSON)
+    list(APPEND JIMTCL_ESP32_SRCS
+        "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-json.c")
 endif()
 
 idf_component_register(
@@ -72,4 +99,5 @@ target_compile_options(${COMPONENT_LIB} PRIVATE
     -Wno-sign-compare
     -Wno-old-style-declaration
     -Wno-implicit-fallthrough
+    -Wno-missing-field-initializers
 )
