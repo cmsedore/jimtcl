@@ -84,6 +84,9 @@ int Jim_InitStaticExtensions(Jim_Interp *interp)
 #ifdef CONFIG_JIM_EXT_SYSLOG
     Jim_syslogInit(interp);
 #endif
+#ifdef CONFIG_JIM_EXT_TEST
+    Jim_testInit(interp);
+#endif
 
     return JIM_OK;
 }

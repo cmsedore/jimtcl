@@ -1,0 +1,200 @@
+# core.test -- Core Jim Tcl interpreter tests on ESP32
+# Verifies fundamental language features work correctly in the embedded environment.
+
+test suite "Core Jim Tcl"
+test reset
+
+# --- Variables ---
+
+test run core-1.1 {variable set and get} -body {
+    set x 42
+    set x
+} -result {42}
+
+test run core-1.2 {variable with string value} -body {
+    set greeting "hello world"
+    set greeting
+} -result {hello world}
+
+# --- Expr arithmetic ---
+
+test run core-2.1 {expr addition} -body {
+    expr {3 + 4}
+} -result {7}
+
+test run core-2.2 {expr multiplication and precedence} -body {
+    expr {2 + 3 * 4}
+} -result {14}
+
+test run core-2.3 {expr floating point} -body {
+    expr {1.0 / 3.0 > 0.3}
+} -result {1}
+
+test run core-2.4 {expr comparison} -body {
+    expr {10 > 5 && 3 < 7}
+} -result {1}
+
+# --- List operations ---
+
+test run core-3.1 {list creation} -body {
+    list a b c
+} -result {a b c}
+
+test run core-3.2 {lindex} -body {
+    lindex {a b c d} 2
+} -result {c}
+
+test run core-3.3 {llength} -body {
+    llength {a b c d e}
+} -result {5}
+
+test run core-3.4 {lappend} -body {
+    set mylist {a b}
+    lappend mylist c d
+    set mylist
+} -result {a b c d}
+
+test run core-3.5 {lrange} -body {
+    lrange {a b c d e} 1 3
+} -result {b c d}
+
+# --- Dict operations ---
+
+test run core-4.1 {dict create} -body {
+    dict create name ESP32 freq 240
+} -result {name ESP32 freq 240}
+
+test run core-4.2 {dict get} -body {
+    dict get {name ESP32 freq 240} freq
+} -result {240}
+
+test run core-4.3 {dict set} -body {
+    set d {a 1 b 2}
+    dict set d c 3
+    dict get $d c
+} -result {3}
+
+test run core-4.4 {dict exists true} -body {
+    dict exists {a 1 b 2} a
+} -result {1}
+
+test run core-4.5 {dict exists false} -body {
+    dict exists {a 1 b 2} z
+} -result {0}
+
+# --- String operations ---
+
+test run core-5.1 {string length} -body {
+    string length "hello"
+} -result {5}
+
+test run core-5.2 {string range} -body {
+    string range "hello world" 0 4
+} -result {hello}
+
+test run core-5.3 {string match glob} -body {
+    string match "hel*" "hello"
+} -result {1}
+
+test run core-5.4 {string match failure} -body {
+    string match "xyz*" "hello"
+} -result {0}
+
+# --- Proc ---
+
+test run core-6.1 {proc definition and call} -body {
+    proc double {x} { expr {$x * 2} }
+    double 21
+} -result {42}
+
+test run core-6.2 {proc with default args} -body {
+    proc greet {{name world}} { return "hello $name" }
+    greet
+} -result {hello world}
+
+test run core-6.3 {proc with args} -body {
+    proc mysum {args} {
+        set total 0
+        foreach x $args { set total [expr {$total + $x}] }
+        return $total
+    }
+    mysum 1 2 3 4
+} -result {10}
+
+# --- Control flow ---
+
+test run core-7.1 {if true branch} -body {
+    if {1 > 0} { set r yes } else { set r no }
+    set r
+} -result {yes}
+
+test run core-7.2 {if false branch} -body {
+    if {1 > 2} { set r yes } else { set r no }
+    set r
+} -result {no}
+
+test run core-7.3 {for loop} -body {
+    set sum 0
+    for {set i 0} {$i < 5} {incr i} { set sum [expr {$sum + $i}] }
+    set sum
+} -result {10}
+
+test run core-7.4 {while loop} -body {
+    set i 0
+    set sum 0
+    while {$i < 4} { set sum [expr {$sum + $i}]; incr i }
+    set sum
+} -result {6}
+
+test run core-7.5 {foreach} -body {
+    set result {}
+    foreach x {a b c} { lappend result "${x}!" }
+    set result
+} -result {a! b! c!}
+
+test run core-7.6 {switch} -body {
+    set val "b"
+    switch $val {
+        a { set r 1 }
+        b { set r 2 }
+        c { set r 3 }
+    }
+    set r
+} -result {2}
+
+# --- Error handling ---
+
+test run core-8.1 {catch success} -body {
+    catch {expr {1 + 1}} result
+    set result
+} -result {2}
+
+test run core-8.2 {catch error} -body {
+    set code [catch {error "test error"} msg]
+    list $code $msg
+} -result {1 {test error}}
+
+test run core-8.3 {try with on error} -body {
+    try {
+        error "boom"
+    } on error {msg} {
+        set msg
+    }
+} -result {boom}
+
+# --- Arrow syntax (dotsugar) ---
+
+test run core-9.1 {dotsugar enable and access} -body {
+    set config [dict create wifi [dict create ssid MyNet password secret]]
+    dotsugar 1
+    set result $config->wifi->ssid
+    dotsugar 0
+    set result
+} -result {MyNet}
+
+test run core-9.2 {dotsugar query state} -body {
+    dotsugar 0
+    dotsugar
+} -result {0}
+
+test report

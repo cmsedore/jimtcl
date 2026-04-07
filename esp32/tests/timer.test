@@ -1,0 +1,97 @@
+# timer.test -- Timer extension tests
+# Tests FreeRTOS software timers that deliver callbacks to Tcl task VMs.
+
+test suite "Timer Extension"
+test reset
+
+# Helper: create a task target for timer callbacks
+set _timer_task [task create -name timerrecv]
+esp32 sleep 50
+
+# --- Create ---
+
+test run timer-1.1 {create one-shot timer} -body {
+    set id [timer create 500 -callback {on_fire timerrecv}]
+    expr {$id >= 0}
+} -result {1}
+
+test run timer-1.2 {create repeating timer} -body {
+    set id [timer create 1000 -callback {on_tick timerrecv} -repeat]
+    expr {$id >= 0}
+} -result {1}
+
+test run timer-1.3 {create timer with name} -body {
+    set id [timer create 1000 -callback {on_tick timerrecv} -repeat -name mytimer]
+    expr {$id >= 0}
+} -result {1}
+
+# --- List ---
+
+test run timer-2.1 {timer list shows active timers} -body {
+    set entries [timer list]
+    set found 0
+    foreach e $entries {
+        if {[dict get $e name] eq "mytimer"} { set found 1 }
+    }
+    set found
+} -result {1}
+
+test run timer-2.2 {timer list entry has expected fields} -body {
+    set entries [timer list]
+    set e [lindex $entries end]
+    set has_id [dict exists $e id]
+    set has_name [dict exists $e name]
+    set has_interval [dict exists $e interval]
+    set has_repeat [dict exists $e repeat]
+    set has_callback [dict exists $e callback]
+    set has_target [dict exists $e target]
+    list $has_id $has_name $has_interval $has_repeat $has_callback $has_target
+} -result {1 1 1 1 1 1}
+
+# --- Cancel ---
+
+test run timer-3.1 {cancel by id} -body {
+    set id [timer create 2000 -callback {noop timerrecv} -name cancelid]
+    timer cancel $id
+    set found 0
+    foreach e [timer list] {
+        if {[dict get $e name] eq "cancelid"} { set found 1 }
+    }
+    set found
+} -result {0}
+
+test run timer-3.2 {cancel by name} -body {
+    timer create 2000 -callback {noop timerrecv} -name cancelname
+    timer cancel cancelname
+    set found 0
+    foreach e [timer list] {
+        if {[dict get $e name] eq "cancelname"} { set found 1 }
+    }
+    set found
+} -result {0}
+
+# --- Error cases ---
+
+test run timer-4.1 {cancel nonexistent timer} -body {
+    timer cancel "no_such_timer"
+} -returnCodes error -match glob -result {timer*not found*}
+
+test run timer-4.2 {create with missing callback} -body {
+    timer create 1000
+} -returnCodes error -match glob -result {*-callback*}
+
+test run timer-4.3 {create with zero interval} -body {
+    timer create 0 -callback {noop timerrecv}
+} -returnCodes error -match glob -result {*must be positive*}
+
+test run timer-4.4 {duplicate timer name} -body {
+    timer create 1000 -callback {noop timerrecv} -name dupname
+    timer create 1000 -callback {noop timerrecv} -name dupname
+} -returnCodes error -match glob -result {*already exists*}
+
+# Cleanup
+catch { timer cancel mytimer }
+catch { timer cancel dupname }
+catch { task delete $_timer_task }
+
+test report

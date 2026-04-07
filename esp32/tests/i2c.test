@@ -1,0 +1,89 @@
+# i2c.test -- I2C extension tests
+#
+# Requires: i2c_hw constraint if an I2C device is connected to the bus.
+
+test suite "I2C Extension"
+test reset
+
+# Set to 1 if I2C bus has a device connected (SDA=6, SCL=7)
+test constraint i2c_hw 0
+
+# --- Init / deinit (no device required) ---
+
+test run i2c-1.1 {init port 0 with valid pins} -body {
+    i2c init 0 -sda 6 -scl 7
+} -result {}
+
+test run i2c-1.2 {deinit port 0} -body {
+    i2c deinit 0
+} -result {}
+
+test run i2c-1.3 {init with explicit frequency} -body {
+    i2c init 0 -sda 6 -scl 7 -freq 400000
+    i2c deinit 0
+} -result {}
+
+# --- Error cases (always run) ---
+
+test run i2c-2.1 {invalid port number} -body {
+    i2c init 5 -sda 6 -scl 7
+} -returnCodes error -match glob -result {*invalid I2C port*}
+
+test run i2c-2.2 {missing sda pin} -body {
+    i2c init 0 -scl 7
+} -returnCodes error -match glob -result {*must specify both*}
+
+test run i2c-2.3 {missing scl pin} -body {
+    i2c init 0 -sda 6
+} -returnCodes error -match glob -result {*must specify both*}
+
+test run i2c-2.4 {bad frequency} -body {
+    i2c init 0 -sda 6 -scl 7 -freq 0
+} -returnCodes error -match glob -result {*frequency must be*}
+
+test run i2c-2.5 {unknown option} -body {
+    i2c init 0 -sda 6 -scl 7 -baud 100000
+} -returnCodes error -match glob -result {*unknown option*}
+
+# --- Detect (returns empty list if nothing connected) ---
+
+test run i2c-3.1 {detect returns a list} -body {
+    i2c init 0 -sda 6 -scl 7
+    set addrs [i2c detect 0]
+    i2c deinit 0
+    expr {[llength $addrs] >= 0}
+} -result {1}
+
+# --- Read/write with real hardware ---
+
+test run i2c-4.1 {write to device} -body {
+    i2c init 0 -sda 6 -scl 7
+    # Write register 0x00 to first detected device
+    set addrs [i2c detect 0]
+    if {[llength $addrs] == 0} {
+        error "no I2C device found"
+    }
+    set addr [lindex $addrs 0]
+    i2c write 0 $addr {0}
+} -constraints i2c_hw -match glob -result {*}
+
+test run i2c-4.2 {read from device} -body {
+    i2c init 0 -sda 6 -scl 7
+    set addrs [i2c detect 0]
+    if {[llength $addrs] == 0} {
+        error "no I2C device found"
+    }
+    set addr [lindex $addrs 0]
+    set data [i2c read 0 $addr 1]
+    i2c deinit 0
+    expr {[llength $data] == 1}
+} -constraints i2c_hw -result {1}
+
+# --- Read/write without init ---
+
+test run i2c-5.1 {detect without init} -body {
+    i2c deinit 0
+    i2c detect 0
+} -returnCodes error -match glob -result {*not initialized*}
+
+test report

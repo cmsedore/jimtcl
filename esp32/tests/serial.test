@@ -1,0 +1,82 @@
+# serial.test -- Serial (UART) extension tests
+#
+# Requires: serial_loopback constraint if UART1 TX is wired to RX.
+
+test suite "Serial Extension"
+test reset
+
+# Set to 1 if UART1 TX (pin 4) is physically connected to RX (pin 5)
+test constraint serial_loopback 0
+
+# --- Open / close on port 1 (not console port 0) ---
+
+test run serial-1.1 {open UART port 1} -body {
+    serial open 1 -tx 4 -rx 5 -baud 115200
+} -result {}
+
+test run serial-1.2 {close UART port 1} -body {
+    serial close 1
+} -result {}
+
+test run serial-1.3 {open with all parameters} -body {
+    serial open 1 -tx 4 -rx 5 -baud 9600 -databits 8 -stopbits 1 -parity none
+    serial close 1
+} -result {}
+
+# --- Error cases (always run) ---
+
+test run serial-2.1 {invalid port number} -body {
+    serial open 9 -tx 4 -rx 5 -baud 115200
+} -returnCodes error -match glob -result {*invalid UART port*}
+
+test run serial-2.2 {open without TX pin} -body {
+    serial open 1 -rx 5 -baud 115200
+} -returnCodes error -match glob -result {*must specify both*}
+
+test run serial-2.3 {open without RX pin} -body {
+    serial open 1 -tx 4 -baud 115200
+} -returnCodes error -match glob -result {*must specify both*}
+
+test run serial-2.4 {write to unopened port} -body {
+    serial close 1
+    serial write 1 "hello"
+} -returnCodes error -match glob -result {*not open*}
+
+test run serial-2.5 {read from unopened port} -body {
+    serial read 1
+} -returnCodes error -match glob -result {*not open*}
+
+test run serial-2.6 {close already closed port} -body {
+    serial close 1
+} -returnCodes error -match glob -result {*not open*}
+
+# --- Available bytes (port open, nothing received) ---
+
+test run serial-3.1 {available returns 0 with no data} -body {
+    serial open 1 -tx 4 -rx 5 -baud 115200
+    set avail [serial available 1]
+    serial close 1
+    expr {$avail == 0}
+} -result {1}
+
+# --- Loopback tests (TX -> RX on same port) ---
+
+test run serial-4.1 {loopback write and read} -body {
+    serial open 1 -tx 4 -rx 5 -baud 115200
+    serial write 1 "hello"
+    after 50
+    set data [serial read 1 5 -timeout 500]
+    serial close 1
+    set data
+} -result {hello} -constraints serial_loopback
+
+test run serial-4.2 {loopback readline} -body {
+    serial open 1 -tx 4 -rx 5 -baud 115200
+    serial write 1 "test line\n"
+    after 50
+    set line [serial readline 1 -timeout 500]
+    serial close 1
+    set line
+} -result {test line} -constraints serial_loopback
+
+test report

@@ -1,0 +1,44 @@
+# ota.test -- OTA extension tests
+#
+# ota status and ota validate are safe to call on any running firmware.
+# ota update with a bad URL tests error handling.
+
+test suite "OTA Extension"
+test reset
+
+# Set to 1 if WiFi is connected (needed for ota update test)
+test constraint wifi_available 0
+
+# --- Status (always works) ---
+
+test run ota-1.1 {ota status returns partition info} -body {
+    set info [ota status]
+    # Should be a dict-like list with partition, version, etc.
+    expr {[llength $info] >= 4}
+} -result {1}
+
+test run ota-1.2 {ota status contains partition key} -body {
+    set info [ota status]
+    set idx [lsearch $info "partition"]
+    expr {$idx >= 0}
+} -result {1}
+
+test run ota-1.3 {ota status contains version key} -body {
+    set info [ota status]
+    set idx [lsearch $info "version"]
+    expr {$idx >= 0}
+} -result {1}
+
+# --- Validate (marks current firmware as valid, safe to call) ---
+
+test run ota-2.1 {ota validate current firmware} -body {
+    ota validate
+} -result {ok}
+
+# --- Update with bad URL (should return error) ---
+
+test run ota-3.1 {ota update with unreachable URL} -body {
+    ota update "https://192.0.2.1/nonexistent.bin"
+} -returnCodes error -match glob -result {*OTA update failed*} -constraints wifi_available
+
+test report

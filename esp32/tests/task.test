@@ -1,0 +1,152 @@
+# task.test -- Task extension tests
+# Tests FreeRTOS-based Tcl VM tasks. Runs on ESP32 without external hardware.
+
+test suite "Task Extension"
+test reset
+
+# --- Create and basic operations ---
+
+test run task-1.1 {create task with defaults} -body {
+    set h [task create]
+    expr {$h >= 0}
+} -result {1}
+
+test run task-1.2 {create task with name} -body {
+    set h [task create -name testworker]
+    set info [task info $h]
+    dict get $info name
+} -result {testworker}
+
+test run task-1.3 {task self from main} -body {
+    task self
+} -result {main}
+
+# --- Task list ---
+
+test run task-2.1 {task list shows created tasks} -body {
+    set h [task create -name lister]
+    esp32 sleep 50
+    set entries [task list]
+    set found 0
+    foreach entry $entries {
+        if {[dict get $entry name] eq "lister"} { set found 1 }
+    }
+    task delete $h
+    set found
+} -result {1}
+
+# --- Task eval (synchronous) ---
+
+test run task-3.1 {task eval simple expr} -body {
+    set h [task create -name evaltest]
+    esp32 sleep 50
+    set result [task eval $h {expr {6 * 7}}]
+    task delete $h
+    set result
+} -result {42}
+
+test run task-3.2 {task eval variable isolation} -body {
+    set myvar "parent_value"
+    set h [task create -name isolation]
+    esp32 sleep 50
+    set result [task eval $h {
+        set myvar "child_value"
+        set myvar
+    }]
+    task delete $h
+    list $myvar $result
+} -result {parent_value child_value}
+
+test run task-3.3 {task eval string operations} -body {
+    set h [task create -name strtest]
+    esp32 sleep 50
+    set result [task eval $h {string length "hello"}]
+    task delete $h
+    set result
+} -result {5}
+
+# --- Task send (async) ---
+
+test run task-4.1 {task send does not block} -body {
+    set h [task create -name sendtest]
+    esp32 sleep 50
+    task send $h {set x 1}
+    task delete $h
+    # If we get here without hanging, send is async
+    set ok 1
+} -result {1}
+
+# --- Task info ---
+
+test run task-5.1 {task info returns dict with expected keys} -body {
+    set h [task create -name infotest]
+    esp32 sleep 100
+    set info [task info $h]
+    set has_name [dict exists $info name]
+    set has_state [dict exists $info state]
+    set has_restarts [dict exists $info restarts]
+    set has_cb [dict exists $info circuit_breaker]
+    task delete $h
+    list $has_name $has_state $has_restarts $has_cb
+} -result {1 1 1 1}
+
+test run task-5.2 {task info state is running} -body {
+    set h [task create -name runcheck]
+    esp32 sleep 100
+    set info [task info $h]
+    set state [dict get $info state]
+    task delete $h
+    set state
+} -result {running}
+
+test run task-5.3 {task info circuit breaker starts closed} -body {
+    set h [task create -name cbcheck]
+    esp32 sleep 50
+    set info [task info $h]
+    set cb [dict get $info circuit_breaker]
+    task delete $h
+    set cb
+} -result {closed}
+
+# --- Task delete ---
+
+test run task-6.1 {task delete removes from list} -body {
+    set h [task create -name delme]
+    esp32 sleep 50
+    task delete $h
+    esp32 sleep 100
+    set found 0
+    foreach entry [task list] {
+        if {[dict get $entry name] eq "delme"} { set found 1 }
+    }
+    set found
+} -result {0}
+
+# --- Error cases ---
+
+test run task-7.1 {invalid handle} -body {
+    task info 999
+} -returnCodes error -match glob -result {invalid task handle*}
+
+test run task-7.2 {eval on deleted task} -body {
+    set h [task create -name gone]
+    esp32 sleep 50
+    task delete $h
+    esp32 sleep 100
+    task eval $h {set x 1}
+} -returnCodes error -match glob -result {invalid task handle*}
+
+# --- Task restart ---
+
+test run task-8.1 {task restart} -body {
+    set h [task create -name restartme]
+    esp32 sleep 100
+    task restart $h
+    esp32 sleep 200
+    set info [task info $h]
+    set restarts [dict get $info restarts]
+    task delete $h
+    expr {$restarts >= 1}
+} -result {1}
+
+test report

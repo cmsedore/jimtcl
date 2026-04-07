@@ -92,6 +92,9 @@ int Jim_cronInit(Jim_Interp *interp);
 #ifdef CONFIG_JIM_EXT_SYSLOG
 int Jim_syslogInit(Jim_Interp *interp);
 #endif
+#ifdef CONFIG_JIM_EXT_TEST
+int Jim_testInit(Jim_Interp *interp);
+#endif
 
 #ifdef __cplusplus
 }

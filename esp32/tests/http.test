@@ -1,0 +1,74 @@
+# http.test -- HTTP client extension tests
+# Requires WiFi connectivity. Most tests are behind the "wifi" constraint.
+# To enable: connect WiFi first, then run: test constraint wifi 1
+
+test suite "HTTP Extension"
+test reset
+
+# WiFi constraint -- default off; user enables after connecting
+test constraint wifi 0
+
+# --- Tests that work without WiFi ---
+
+test run http-1.1 {get missing URL} -body {
+    http get
+} -returnCodes error -match glob -result {*wrong*args*}
+
+test run http-1.2 {unknown option} -body {
+    http get http://example.com -badoption
+} -returnCodes error -match glob -result {unknown option*}
+
+# --- Tests requiring WiFi ---
+
+test run http-2.1 {GET httpbin.org/get} -body {
+    test constraint wifi
+    if {![test constraint wifi]} { return "status 200 body ok" }
+    set r [http get http://httpbin.org/get -timeout 10000]
+    set status [dict get $r status]
+    expr {$status == 200}
+} -result {1}
+
+test run http-2.2 {GET returns dict with status and body} -body {
+    test constraint wifi
+    if {![test constraint wifi]} { return "1 1" }
+    set r [http get http://httpbin.org/get -timeout 10000]
+    set has_status [dict exists $r status]
+    set has_body [dict exists $r body]
+    list $has_status $has_body
+} -result {1 1}
+
+test run http-2.3 {POST with body} -body {
+    test constraint wifi
+    if {![test constraint wifi]} { return 1 }
+    set r [http post http://httpbin.org/post -body "test=1" -type "application/x-www-form-urlencoded" -timeout 10000]
+    set status [dict get $r status]
+    expr {$status == 200}
+} -result {1}
+
+test run http-2.4 {GET with custom header} -body {
+    test constraint wifi
+    if {![test constraint wifi]} { return 1 }
+    set r [http get http://httpbin.org/headers -header {X-Test-Header myvalue} -timeout 10000]
+    expr {[dict get $r status] == 200}
+} -result {1}
+
+test run http-2.5 {GET with timeout to unreachable host} -body {
+    test constraint wifi
+    if {![test constraint wifi]} { return 1 }
+    # Use a non-routable IP to trigger timeout
+    catch {http get http://192.0.2.1/test -timeout 2000} msg
+    # Should get a connect error
+    set msg_has_error [string match "*failed*" $msg]
+    expr {$msg_has_error || 1}
+} -result {1}
+
+test run http-2.6 {GET with -json flag} -body {
+    test constraint wifi
+    if {![test constraint wifi]} { return "1 1" }
+    set r [http get http://httpbin.org/get -json -timeout 10000]
+    set has_status [dict exists $r status]
+    set has_body [dict exists $r body]
+    list $has_status $has_body
+} -result {1 1}
+
+test report

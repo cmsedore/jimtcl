@@ -101,4 +101,12 @@ menu "Jim Tcl Extensions"
             Adds the [syslog] command for UDP syslog (RFC 5424) output
             with optional puts redirect.
 
+    config JIM_EXT_TEST
+        bool "Enable Test framework extension"
+        default y
+        help
+            Adds the [test] command for running Tcl tests on the ESP32
+            REPL. Provides test run, constraint, report, reset, and
+            suite subcommands.
+
 endmenu

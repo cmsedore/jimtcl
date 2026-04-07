@@ -1,0 +1,70 @@
+# pwm.test -- PWM/LEDC extension tests
+#
+# PWM init/duty/freq/stop can be tested without an oscilloscope.
+
+test suite "PWM Extension"
+test reset
+
+# --- Init / stop ---
+
+test run pwm-1.1 {init PWM on a pin} -body {
+    set ch [pwm init 2]
+    expr {[string is integer -strict $ch]}
+} -result {1}
+
+test run pwm-1.2 {init PWM with options} -body {
+    pwm stop 2
+    set ch [pwm init 2 -freq 1000 -duty 50 -resolution 10]
+    expr {[string is integer -strict $ch]}
+} -result {1}
+
+test run pwm-1.3 {stop PWM on pin} -body {
+    pwm stop 2
+} -result {}
+
+# --- Duty / freq changes ---
+
+test run pwm-2.1 {change duty cycle} -body {
+    pwm init 2 -duty 0
+    pwm duty 2 75
+} -result {}
+
+test run pwm-2.2 {change frequency} -body {
+    pwm freq 2 10000
+} -result {}
+
+test run pwm-2.3 {set duty to 0 percent} -body {
+    pwm duty 2 0
+} -result {}
+
+test run pwm-2.4 {set duty to 100 percent} -body {
+    pwm duty 2 100
+    pwm stop 2
+} -result {}
+
+# --- Error cases (always run) ---
+
+test run pwm-3.1 {invalid pin number} -body {
+    pwm init 999
+} -returnCodes error -match glob -result {*invalid GPIO pin*}
+
+test run pwm-3.2 {duty out of range} -body {
+    pwm init 2
+    set result [catch {pwm duty 2 150} msg]
+    pwm stop 2
+    list $result $msg
+} -match glob -result {1 *duty must be 0-100*}
+
+test run pwm-3.3 {duty on uninitialized pin} -body {
+    pwm duty 18 50
+} -returnCodes error -match glob -result {*not initialized*}
+
+test run pwm-3.4 {freq on uninitialized pin} -body {
+    pwm freq 18 1000
+} -returnCodes error -match glob -result {*not initialized*}
+
+test run pwm-3.5 {stop on uninitialized pin} -body {
+    pwm stop 18
+} -returnCodes error -match glob -result {*not initialized*}
+
+test report

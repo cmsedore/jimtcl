@@ -1,0 +1,108 @@
+# cron.test -- Cron/scheduler extension tests
+# Tests periodic and one-shot timer scheduling. Requires a running task for callbacks.
+
+test suite "Cron Extension"
+test reset
+
+# Helper: create a task target for cron callbacks
+set _cron_task [task create -name cronrecv]
+esp32 sleep 50
+
+# --- Add and list ---
+
+test run cron-1.1 {add periodic entry with name} -body {
+    set id [cron add 1000 -callback {on_tick cronrecv} -name heartbeat]
+    expr {$id >= 0}
+} -result {1}
+
+test run cron-1.2 {list shows entry} -body {
+    set entries [cron list]
+    set found 0
+    foreach e $entries {
+        if {[dict get $e name] eq "heartbeat"} { set found 1 }
+    }
+    set found
+} -result {1}
+
+test run cron-1.3 {list entry has expected fields} -body {
+    set entries [cron list]
+    set e [lindex $entries 0]
+    set has_id [dict exists $e id]
+    set has_name [dict exists $e name]
+    set has_interval [dict exists $e interval_ms]
+    set has_target [dict exists $e target]
+    set has_callback [dict exists $e callback]
+    set has_oneshot [dict exists $e one_shot]
+    list $has_id $has_name $has_interval $has_target $has_callback $has_oneshot
+} -result {1 1 1 1 1 1}
+
+# --- Introspection fields ---
+
+test run cron-2.1 {list entry has fire_count} -body {
+    set entries [cron list]
+    set e [lindex $entries 0]
+    dict exists $e fire_count
+} -result {1}
+
+test run cron-2.2 {list entry has age_ms} -body {
+    set entries [cron list]
+    set e [lindex $entries 0]
+    set age [dict get $e age_ms]
+    expr {$age >= 0}
+} -result {1}
+
+test run cron-2.3 {list entry has last_fired_ms_ago} -body {
+    set entries [cron list]
+    set e [lindex $entries 0]
+    dict exists $e last_fired_ms_ago
+} -result {1}
+
+# --- Remove ---
+
+test run cron-3.1 {remove by name} -body {
+    set id [cron add 500 -callback {on_tick cronrecv} -name removeme]
+    cron remove removeme
+    # Verify it's gone
+    set found 0
+    foreach e [cron list] {
+        if {[dict get $e name] eq "removeme"} { set found 1 }
+    }
+    set found
+} -result {0}
+
+test run cron-3.2 {remove by id} -body {
+    set id [cron add 500 -callback {on_tick cronrecv} -name byid]
+    cron remove $id
+    set found 0
+    foreach e [cron list] {
+        if {[dict get $e name] eq "byid"} { set found 1 }
+    }
+    set found
+} -result {0}
+
+# --- One-shot ---
+
+test run cron-4.1 {cron once returns id} -body {
+    set id [cron once 200 -callback {on_once cronrecv}]
+    expr {$id >= 0}
+} -result {1}
+
+# --- Error cases ---
+
+test run cron-5.1 {remove nonexistent entry} -body {
+    cron remove "no_such_entry"
+} -returnCodes error -match glob -result {cron entry not found*}
+
+test run cron-5.2 {add with missing callback} -body {
+    cron add 1000
+} -returnCodes error -match glob -result {*-callback*}
+
+test run cron-5.3 {add with zero interval} -body {
+    cron add 0 -callback {on_tick cronrecv}
+} -returnCodes error -match glob -result {*must be positive*}
+
+# Cleanup: remove the heartbeat entry and delete helper task
+catch { cron remove heartbeat }
+catch { task delete $_cron_task }
+
+test report

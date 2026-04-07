@@ -140,6 +140,11 @@ if(CONFIG_JIM_EXT_SYSLOG)
         "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-syslog.c")
 endif()
 
+if(CONFIG_JIM_EXT_TEST)
+    list(APPEND JIMTCL_ESP32_SRCS
+        "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-test.c")
+endif()
+
 idf_component_register(
     SRCS ${JIMTCL_CORE_SRCS} ${JIMTCL_ESP32_SRCS}
     INCLUDE_DIRS
