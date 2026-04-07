@@ -59,6 +59,12 @@ int Jim_websocketInit(Jim_Interp *interp);
 #ifdef CONFIG_JIM_EXT_JSON
 int Jim_jsonInit(Jim_Interp *interp);
 #endif
+#if defined(CONFIG_JIM_EXT_TWAI) && defined(SOC_TWAI_SUPPORTED)
+int Jim_twaiInit(Jim_Interp *interp);
+#endif
+#ifdef CONFIG_JIM_EXT_SERIAL
+int Jim_serialInit(Jim_Interp *interp);
+#endif
 
 #ifdef __cplusplus
 }

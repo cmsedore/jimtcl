@@ -28,4 +28,20 @@ menu "Jim Tcl Extensions"
             ESP-IDF's bundled cJSON library. Also enables -json flags
             in the HTTP, MQTT, and WebSocket extensions.
 
+    config JIM_EXT_TWAI
+        bool "Enable TWAI (CAN bus) extension"
+        default n
+        help
+            Adds the [twai] command for CAN bus communication via the
+            ESP32 TWAI controller. Only available on chips with TWAI
+            hardware (SOC_TWAI_SUPPORTED).
+
+    config JIM_EXT_SERIAL
+        bool "Enable Serial (UART) extension"
+        default y
+        help
+            Adds the [serial] command for UART serial port communication.
+            Supports up to 3 UART ports with configurable baud rate,
+            data bits, stop bits, parity, and async listener mode.
+
 endmenu

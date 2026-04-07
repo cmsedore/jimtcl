@@ -80,6 +80,16 @@ if(CONFIG_JIM_EXT_JSON)
         "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-json.c")
 endif()
 
+if(CONFIG_JIM_EXT_TWAI)
+    list(APPEND JIMTCL_ESP32_SRCS
+        "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-twai.c")
+endif()
+
+if(CONFIG_JIM_EXT_SERIAL)
+    list(APPEND JIMTCL_ESP32_SRCS
+        "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-serial.c")
+endif()
+
 idf_component_register(
     SRCS ${JIMTCL_CORE_SRCS} ${JIMTCL_ESP32_SRCS}
     INCLUDE_DIRS

@@ -51,6 +51,12 @@ int Jim_InitStaticExtensions(Jim_Interp *interp)
 #ifdef CONFIG_JIM_EXT_JSON
     Jim_jsonInit(interp);
 #endif
+#if defined(CONFIG_JIM_EXT_TWAI) && defined(SOC_TWAI_SUPPORTED)
+    Jim_twaiInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_SERIAL
+    Jim_serialInit(interp);
+#endif
 
     return JIM_OK;
 }
