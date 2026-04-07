@@ -17,6 +17,7 @@
 #include "jim-esp32-task.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/timers.h"
+#include "esp_timer.h"
 #include "esp_log.h"
 
 static const char *TAG = "jim-cron";
@@ -35,6 +36,9 @@ typedef struct {
     char callback_proc[64];
     char callback_target[16];
     int one_shot;
+    int fire_count;             /* How many times this entry has fired */
+    int64_t last_fired_us;      /* Timestamp of last fire (esp_timer_get_time) */
+    int64_t created_us;         /* When the entry was created */
 } cron_entry_t;
 
 static cron_entry_t cron_entries[CRON_MAX_ENTRIES] = { 0 };
@@ -51,6 +55,9 @@ static void cron_timer_callback(TimerHandle_t xTimer)
 
     cron_entry_t *entry = &cron_entries[slot];
     if (!entry->active) return;
+
+    entry->fire_count++;
+    entry->last_fired_us = esp_timer_get_time();
 
     if (task_send_to_name(entry->callback_target, entry->callback_proc) != 0) {
         ESP_LOGW(TAG, "cron delivery failed: slot %d -> task '%s'",
@@ -138,6 +145,9 @@ static int cron_cmd_add(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
     entry->active = 1;
     entry->interval_ms = interval_ms;
     entry->one_shot = 0;
+    entry->fire_count = 0;
+    entry->last_fired_us = 0;
+    entry->created_us = esp_timer_get_time();
 
     if (name) {
         strncpy(entry->name, name, sizeof(entry->name) - 1);
@@ -226,6 +236,9 @@ static int cron_cmd_once(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
     entry->active = 1;
     entry->interval_ms = delay_ms;
     entry->one_shot = 1;
+    entry->fire_count = 0;
+    entry->last_fired_us = 0;
+    entry->created_us = esp_timer_get_time();
 
     snprintf(entry->name, sizeof(entry->name), "once_%d", slot);
 
@@ -327,6 +340,18 @@ static int cron_cmd_list(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 
         Jim_ListAppendElement(interp, dict, Jim_NewStringObj(interp, "one_shot", -1));
         Jim_ListAppendElement(interp, dict, Jim_NewIntObj(interp, entry->one_shot));
+
+        Jim_ListAppendElement(interp, dict, Jim_NewStringObj(interp, "fire_count", -1));
+        Jim_ListAppendElement(interp, dict, Jim_NewIntObj(interp, entry->fire_count));
+
+        int64_t now = esp_timer_get_time();
+        Jim_ListAppendElement(interp, dict, Jim_NewStringObj(interp, "age_ms", -1));
+        Jim_ListAppendElement(interp, dict, Jim_NewIntObj(interp,
+            (jim_wide)((now - entry->created_us) / 1000)));
+
+        Jim_ListAppendElement(interp, dict, Jim_NewStringObj(interp, "last_fired_ms_ago", -1));
+        Jim_ListAppendElement(interp, dict, Jim_NewIntObj(interp,
+            entry->last_fired_us > 0 ? (jim_wide)((now - entry->last_fired_us) / 1000) : -1));
 
         Jim_ListAppendElement(interp, result, dict);
     }
