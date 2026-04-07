@@ -57,6 +57,33 @@ int Jim_InitStaticExtensions(Jim_Interp *interp)
 #ifdef CONFIG_JIM_EXT_SERIAL
     Jim_serialInit(interp);
 #endif
+#ifdef CONFIG_JIM_EXT_ADC
+    Jim_adcInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_PWM
+    Jim_pwmInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_TIMER
+    Jim_timerInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_FS
+    Jim_fsInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_OTA
+    Jim_otaInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_SPI
+    Jim_spiInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_ONEWIRE
+    Jim_onewireInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_CRON
+    Jim_cronInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_SYSLOG
+    Jim_syslogInit(interp);
+#endif
 
     return JIM_OK;
 }

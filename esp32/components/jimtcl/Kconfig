@@ -44,4 +44,61 @@ menu "Jim Tcl Extensions"
             Supports up to 3 UART ports with configurable baud rate,
             data bits, stop bits, parity, and async listener mode.
 
+    config JIM_EXT_ADC
+        bool "Enable ADC extension"
+        default y
+        help
+            Adds the [adc] command for analog-to-digital conversion.
+
+    config JIM_EXT_PWM
+        bool "Enable PWM (LEDC) extension"
+        default y
+        help
+            Adds the [pwm] command for pulse-width modulation via LEDC.
+
+    config JIM_EXT_TIMER
+        bool "Enable Timer extension"
+        default y
+        help
+            Adds the [timer] command for software timers that fire
+            callbacks to named tasks.
+
+    config JIM_EXT_FS
+        bool "Enable Filesystem (SPIFFS) extension"
+        default y
+        help
+            Adds the [fs] command for SPIFFS filesystem access.
+
+    config JIM_EXT_OTA
+        bool "Enable OTA update extension"
+        default y
+        help
+            Adds the [ota] command for over-the-air firmware updates.
+
+    config JIM_EXT_SPI
+        bool "Enable SPI master extension"
+        default y
+        help
+            Adds the [spi] command for SPI bus communication.
+
+    config JIM_EXT_ONEWIRE
+        bool "Enable OneWire extension"
+        default y
+        help
+            Adds the [onewire] command for 1-Wire bus devices (DS18B20, etc).
+
+    config JIM_EXT_CRON
+        bool "Enable Cron/scheduler extension"
+        default y
+        help
+            Adds the [cron] command for periodic script execution via
+            FreeRTOS timers delivering callbacks to tasks.
+
+    config JIM_EXT_SYSLOG
+        bool "Enable Syslog extension"
+        default y
+        help
+            Adds the [syslog] command for UDP syslog (RFC 5424) output
+            with optional puts redirect.
+
 endmenu

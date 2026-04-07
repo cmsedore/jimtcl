@@ -65,6 +65,33 @@ int Jim_twaiInit(Jim_Interp *interp);
 #ifdef CONFIG_JIM_EXT_SERIAL
 int Jim_serialInit(Jim_Interp *interp);
 #endif
+#ifdef CONFIG_JIM_EXT_ADC
+int Jim_adcInit(Jim_Interp *interp);
+#endif
+#ifdef CONFIG_JIM_EXT_PWM
+int Jim_pwmInit(Jim_Interp *interp);
+#endif
+#ifdef CONFIG_JIM_EXT_TIMER
+int Jim_timerInit(Jim_Interp *interp);
+#endif
+#ifdef CONFIG_JIM_EXT_FS
+int Jim_fsInit(Jim_Interp *interp);
+#endif
+#ifdef CONFIG_JIM_EXT_OTA
+int Jim_otaInit(Jim_Interp *interp);
+#endif
+#ifdef CONFIG_JIM_EXT_SPI
+int Jim_spiInit(Jim_Interp *interp);
+#endif
+#ifdef CONFIG_JIM_EXT_ONEWIRE
+int Jim_onewireInit(Jim_Interp *interp);
+#endif
+#ifdef CONFIG_JIM_EXT_CRON
+int Jim_cronInit(Jim_Interp *interp);
+#endif
+#ifdef CONFIG_JIM_EXT_SYSLOG
+int Jim_syslogInit(Jim_Interp *interp);
+#endif
 
 #ifdef __cplusplus
 }
