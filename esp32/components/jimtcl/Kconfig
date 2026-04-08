@@ -109,4 +109,53 @@ menu "Jim Tcl Extensions"
             REPL. Provides test run, constraint, report, reset, and
             suite subcommands.
 
+    config JIM_EXT_MPACK
+        bool "Enable MessagePack extension"
+        default y
+        help
+            Adds the [mpack] command for MessagePack encode/decode and
+            -mpack flags on protocol extensions (serial, http, mqtt, ws).
+            Embeds the ludocode/mpack library.
+
+    config JIM_EXT_CTLPLANE
+        bool "Enable control plane extension"
+        default y
+        depends on JIM_EXT_MPACK
+        help
+            Adds the [ctlplane] command for a binary management protocol
+            over serial or WebSocket. Supports VM introspection, command
+            dispatch, auth, and variable loading via MessagePack+COBS.
+
+    choice JIM_BOOT_MODE
+        prompt "Boot mode"
+        default JIM_BOOT_REPL
+        help
+            Select whether the device boots into the interactive Tcl REPL
+            or the MessagePack control plane on the console UART.
+
+        config JIM_BOOT_REPL
+            bool "Interactive REPL"
+
+        config JIM_BOOT_MPACK
+            bool "MessagePack control plane on UART"
+            depends on JIM_EXT_CTLPLANE
+    endchoice
+
+    config JIM_CTLPLANE_AUTH_KEY
+        string "Control plane auth key (empty = no auth)"
+        default ""
+        depends on JIM_EXT_CTLPLANE
+        help
+            If non-empty, the control plane requires authentication
+            before accepting commands. The host must send an auth
+            command with this key to establish a session.
+
+    config JIM_CTLPLANE_AUTH_TIMEOUT
+        int "Auth session timeout (seconds, 0 = no timeout)"
+        default 900
+        depends on JIM_EXT_CTLPLANE
+        help
+            After this many seconds of inactivity, an authenticated
+            session expires and re-authentication is required.
+
 endmenu

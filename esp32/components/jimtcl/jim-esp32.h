@@ -95,6 +95,12 @@ int Jim_syslogInit(Jim_Interp *interp);
 #ifdef CONFIG_JIM_EXT_TEST
 int Jim_testInit(Jim_Interp *interp);
 #endif
+#ifdef CONFIG_JIM_EXT_MPACK
+int Jim_mpackInit(Jim_Interp *interp);
+#endif
+#ifdef CONFIG_JIM_EXT_CTLPLANE
+int Jim_ctlplaneInit(Jim_Interp *interp);
+#endif
 
 #ifdef __cplusplus
 }

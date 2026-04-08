@@ -145,10 +145,23 @@ if(CONFIG_JIM_EXT_TEST)
         "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-test.c")
 endif()
 
+if(CONFIG_JIM_EXT_MPACK)
+    list(APPEND JIMTCL_ESP32_SRCS
+        "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-mpack.c"
+        "${CMAKE_CURRENT_LIST_DIR}/mpack/mpack.c"
+        "${CMAKE_CURRENT_LIST_DIR}/cobs.c")
+endif()
+
+if(CONFIG_JIM_EXT_CTLPLANE)
+    list(APPEND JIMTCL_ESP32_SRCS
+        "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-ctlplane.c")
+endif()
+
 idf_component_register(
     SRCS ${JIMTCL_CORE_SRCS} ${JIMTCL_ESP32_SRCS}
     INCLUDE_DIRS
         "${CMAKE_CURRENT_LIST_DIR}"
+        "${CMAKE_CURRENT_LIST_DIR}/mpack"
         "${JIMTCL_ROOT}"
     REQUIRES ${JIMTCL_REQUIRES}
 )

@@ -13,6 +13,8 @@
 
 #include "esp_system.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "nvs_flash.h"
 #include "esp_vfs_dev.h"
 #include "driver/uart.h"
@@ -104,8 +106,18 @@ void app_main(void)
         goto cleanup;
     }
 
-    /* Enter interactive mode */
+#ifdef CONFIG_JIM_BOOT_MPACK
+    /* Boot into MessagePack control plane mode on console UART */
+    ESP_LOGI(TAG, "Starting in MessagePack control plane mode");
+    Jim_Eval(interp, "ctlplane start serial 0 -tx -1 -rx -1 -baud 115200");
+    /* Block forever — control plane task handles everything */
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(10000));
+    }
+#else
+    /* Enter interactive REPL mode */
     Jim_Esp32InteractivePrompt(interp);
+#endif
 
 cleanup:
     Jim_FreeInterp(interp);

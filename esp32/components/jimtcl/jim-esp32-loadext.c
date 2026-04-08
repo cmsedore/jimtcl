@@ -87,6 +87,12 @@ int Jim_InitStaticExtensions(Jim_Interp *interp)
 #ifdef CONFIG_JIM_EXT_TEST
     Jim_testInit(interp);
 #endif
+#ifdef CONFIG_JIM_EXT_MPACK
+    Jim_mpackInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_CTLPLANE
+    Jim_ctlplaneInit(interp);
+#endif
 
     return JIM_OK;
 }
