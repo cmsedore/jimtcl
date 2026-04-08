@@ -182,6 +182,14 @@ static void handle_vm_list(ctlplane_state_t *state, mpack_node_t root,
 
     /* Count active slots */
     int count = 0;
+    if (!task_slots_mutex) {
+        /* No tasks have been created yet — return empty list */
+        mpack_start_map(writer, 2);
+        mpack_write_cstr(writer, "status"); mpack_write_cstr(writer, "ok");
+        mpack_write_cstr(writer, "vms"); mpack_start_array(writer, 0); mpack_finish_array(writer);
+        mpack_finish_map(writer);
+        return;
+    }
     if (xSemaphoreTake(task_slots_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
         write_error(writer, "failed to acquire task slots mutex");
         return;
@@ -216,7 +224,7 @@ static void handle_vm_list(ctlplane_state_t *state, mpack_node_t root,
 static void handle_vm_info(ctlplane_state_t *state, mpack_node_t root,
                            mpack_writer_t *writer)
 {
-    mpack_node_t target_node = mpack_node_map_cstr(root, "target");
+    mpack_node_t target_node = mpack_node_map_cstr_optional(root, "target");
     if (mpack_node_is_missing(target_node)) {
         write_error(writer, "missing 'target' field");
         return;
@@ -271,7 +279,7 @@ static void handle_vm_info(ctlplane_state_t *state, mpack_node_t root,
 static void handle_vm_eval(ctlplane_state_t *state, mpack_node_t root,
                            mpack_writer_t *writer)
 {
-    mpack_node_t target_node = mpack_node_map_cstr(root, "target");
+    mpack_node_t target_node = mpack_node_map_cstr_optional(root, "target");
     mpack_node_t script_node = mpack_node_map_cstr(root, "script");
     if (mpack_node_is_missing(target_node) || mpack_node_is_missing(script_node)) {
         write_error(writer, "missing 'target' or 'script' field");
@@ -368,7 +376,7 @@ static void handle_vm_eval(ctlplane_state_t *state, mpack_node_t root,
 static void handle_vm_send(ctlplane_state_t *state, mpack_node_t root,
                            mpack_writer_t *writer)
 {
-    mpack_node_t target_node = mpack_node_map_cstr(root, "target");
+    mpack_node_t target_node = mpack_node_map_cstr_optional(root, "target");
     mpack_node_t script_node = mpack_node_map_cstr(root, "script");
     if (mpack_node_is_missing(target_node) || mpack_node_is_missing(script_node)) {
         write_error(writer, "missing 'target' or 'script' field");
@@ -441,7 +449,7 @@ static void handle_vm_create(ctlplane_state_t *state, mpack_node_t root,
     memcpy(script_buf, script, script_len);
     script_buf[script_len] = '\0';
 
-    snprintf(cmd, cmd_len, "task create %s {%s}", name_buf, script_buf);
+    snprintf(cmd, cmd_len, "task create -name %s {%s}", name_buf, script_buf);
     free(script_buf);
 
     int retcode = Jim_Eval(state->main_interp, cmd);
@@ -462,7 +470,7 @@ static void handle_vm_create(ctlplane_state_t *state, mpack_node_t root,
 static void handle_vm_delete(ctlplane_state_t *state, mpack_node_t root,
                              mpack_writer_t *writer)
 {
-    mpack_node_t target_node = mpack_node_map_cstr(root, "target");
+    mpack_node_t target_node = mpack_node_map_cstr_optional(root, "target");
     if (mpack_node_is_missing(target_node)) {
         write_error(writer, "missing 'target' field");
         return;
@@ -475,9 +483,14 @@ static void handle_vm_delete(ctlplane_state_t *state, mpack_node_t root,
     memcpy(name_buf, target, copy_len);
     name_buf[copy_len] = '\0';
 
-    /* Use task kill command on main interp */
+    /* Find slot index by name, then use task delete with numeric handle */
+    int idx = task_find_slot_by_name(name_buf);
+    if (idx < 0) {
+        write_error(writer, "vm not found");
+        return;
+    }
     char cmd[64];
-    snprintf(cmd, sizeof(cmd), "task kill %s", name_buf);
+    snprintf(cmd, sizeof(cmd), "task delete %d", idx);
     int retcode = Jim_Eval(state->main_interp, cmd);
     const char *result = Jim_String(Jim_GetResult(state->main_interp));
 
@@ -494,7 +507,7 @@ static void handle_vm_delete(ctlplane_state_t *state, mpack_node_t root,
 static void handle_vm_restart(ctlplane_state_t *state, mpack_node_t root,
                               mpack_writer_t *writer)
 {
-    mpack_node_t target_node = mpack_node_map_cstr(root, "target");
+    mpack_node_t target_node = mpack_node_map_cstr_optional(root, "target");
     if (mpack_node_is_missing(target_node)) {
         write_error(writer, "missing 'target' field");
         return;
@@ -710,7 +723,7 @@ static void handle_vars_load(ctlplane_state_t *state, mpack_node_t root,
 
     /* Determine target interpreter */
     Jim_Interp *target_interp = state->main_interp;
-    mpack_node_t target_node = mpack_node_map_cstr(root, "target");
+    mpack_node_t target_node = mpack_node_map_cstr_optional(root, "target");
     if (!mpack_node_is_missing(target_node) && !mpack_node_is_nil(target_node) &&
         mpack_node_type(target_node) == mpack_type_str) {
         const char *target = mpack_node_str(target_node);
@@ -746,27 +759,48 @@ static void handle_vars_load(ctlplane_state_t *state, mpack_node_t root,
         mpack_node_t key_node = mpack_node_map_key_at(vars_node, i);
         mpack_node_t val_node = mpack_node_map_value_at(vars_node, i);
 
+        /* Extract key (always string) */
         const char *key = mpack_node_str(key_node);
         size_t key_len = mpack_node_strlen(key_node);
-        const char *val = mpack_node_str(val_node);
-        size_t val_len = mpack_node_strlen(val_node);
+        char key_buf[64];
+        size_t kl = key_len < sizeof(key_buf)-1 ? key_len : sizeof(key_buf)-1;
+        memcpy(key_buf, key, kl);
+        key_buf[kl] = '\0';
 
-        char *key_buf = malloc(key_len + 1);
-        char *val_buf = malloc(val_len + 1);
-        if (!key_buf || !val_buf) {
-            free(key_buf);
-            free(val_buf);
-            errors++;
-            continue;
+        /* Extract value — handle different mpack types */
+        char val_buf[256];
+        mpack_type_t vtype = mpack_node_type(val_node);
+        switch (vtype) {
+            case mpack_type_str: {
+                const char *v = mpack_node_str(val_node);
+                size_t vl = mpack_node_strlen(val_node);
+                size_t cl = vl < sizeof(val_buf)-1 ? vl : sizeof(val_buf)-1;
+                memcpy(val_buf, v, cl);
+                val_buf[cl] = '\0';
+                break;
+            }
+            case mpack_type_int:
+                snprintf(val_buf, sizeof(val_buf), "%lld", (long long)mpack_node_i64(val_node));
+                break;
+            case mpack_type_uint:
+                snprintf(val_buf, sizeof(val_buf), "%llu", (unsigned long long)mpack_node_u64(val_node));
+                break;
+            case mpack_type_double:
+            case mpack_type_float:
+                snprintf(val_buf, sizeof(val_buf), "%g", mpack_node_double(val_node));
+                break;
+            case mpack_type_bool:
+                snprintf(val_buf, sizeof(val_buf), "%d", mpack_node_bool(val_node) ? 1 : 0);
+                break;
+            case mpack_type_nil:
+                val_buf[0] = '\0';
+                break;
+            default:
+                snprintf(val_buf, sizeof(val_buf), "<unsupported type %d>", vtype);
+                break;
         }
-        memcpy(key_buf, key, key_len);
-        key_buf[key_len] = '\0';
-        memcpy(val_buf, val, val_len);
-        val_buf[val_len] = '\0';
 
         Jim_SetVariableStrWithStr(target_interp, key_buf, val_buf);
-        free(key_buf);
-        free(val_buf);
     }
 
     if (errors > 0) {
@@ -792,7 +826,7 @@ static void handle_vars_get(ctlplane_state_t *state, mpack_node_t root,
 
     /* Determine target interpreter */
     Jim_Interp *target_interp = state->main_interp;
-    mpack_node_t target_node = mpack_node_map_cstr(root, "target");
+    mpack_node_t target_node = mpack_node_map_cstr_optional(root, "target");
     if (!mpack_node_is_missing(target_node) && !mpack_node_is_nil(target_node) &&
         mpack_node_type(target_node) == mpack_type_str) {
         const char *target = mpack_node_str(target_node);
@@ -1004,6 +1038,16 @@ static void ctlplane_task(void *param)
         return;
     }
 
+    /* Drain any stale boot log data from the UART buffer */
+    {
+        uint8_t drain_buf[256];
+        int drained;
+        do {
+            drained = uart_read_bytes((uart_port_t)state->uart_port,
+                                       drain_buf, sizeof(drain_buf), pdMS_TO_TICKS(100));
+        } while (drained > 0);
+    }
+
     size_t frame_pos = 0;
     uint8_t rx_byte;
 
@@ -1127,6 +1171,9 @@ static int ctlplane_cmd_start(Jim_Interp *interp, int argc, Jim_Obj *const *argv
         Jim_SetResultFormatted(interp, "uart_driver_install failed: %s", esp_err_to_name(err));
         return JIM_ERR;
     }
+
+    /* Drain any stale data (boot log garbage) from the UART RX buffer */
+    uart_flush_input((uart_port_t)port);
 
     /* Initialize state */
     ctlplane_state.transport = 0;  /* serial */
@@ -1298,6 +1345,12 @@ static const jim_subcmd_type ctlplane_command_table[] = {
 
 int Jim_ctlplaneInit(Jim_Interp *interp)
 {
+    /* Ensure the task slots mutex exists (normally created by task create,
+     * but the control plane may need it before any tasks are created) */
+    if (!task_slots_mutex) {
+        task_slots_mutex = xSemaphoreCreateMutex();
+    }
+
     Jim_PackageProvideCheck(interp, "ctlplane");
     Jim_RegisterSubCmd(interp, "ctlplane", ctlplane_command_table, NULL);
     return JIM_OK;

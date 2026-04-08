@@ -534,10 +534,20 @@ will not be understood and detection will fail.
         time.sleep(0.1)
     print(colorize("OK", Colors.GREEN))
 
-    # Detect control plane mode
+    # Detect control plane mode (also serves to flush boot garbage)
     print("Detecting control plane mode...", end=" ")
     if detect_ctlplane(cp):
-        status = "auth_required" if args.auth_key else "ok"
+        # Flush: send a few rapid commands to clear any residual boot data
+        for _ in range(3):
+            try:
+                cp.sys_info()
+            except Exception:
+                pass
+            time.sleep(0.1)
+        # Final drain
+        while cp.ser.in_waiting:
+            cp.ser.read(cp.ser.in_waiting)
+            time.sleep(0.05)
         print(colorize("OK", Colors.GREEN))
     else:
         print(colorize("FAILED", Colors.RED))
