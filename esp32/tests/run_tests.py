@@ -23,8 +23,14 @@ import serial
 import sys
 import time
 
-# Force unbuffered output for real-time streaming
 print = functools.partial(print, flush=True)
+
+PROMPT_RE = re.compile(r'jim>\s*$')
+PASS_RE = re.compile(r'^PASS:\s+(\S+)', re.MULTILINE)
+FAIL_RE = re.compile(r'^FAIL:\s+(\S+)\s+\(([^)]*)\)\s*$|^FAIL:\s+(\S+)\s+\(([^)]*)\)\s*-\s*(.*)', re.MULTILINE)
+SKIP_RE = re.compile(r'^SKIP:\s+(\S+)', re.MULTILINE)
+# Match the dict result from "test report": total N pass N fail N skip N
+REPORT_DICT_RE = re.compile(r'total\s+(\d+)\s+pass\s+(\d+)\s+fail\s+(\d+)\s+skip\s+(\d+)')
 
 
 class Colors:
@@ -33,6 +39,7 @@ class Colors:
     YELLOW = '\033[93m'
     CYAN = '\033[96m'
     BOLD = '\033[1m'
+    DIM = '\033[2m'
     RESET = '\033[0m'
 
 
@@ -49,8 +56,6 @@ class ESP32TestRunner:
         self.timeout = timeout
         self.verbose = verbose
         self.ser = None
-
-        # Aggregate results
         self.total_pass = 0
         self.total_fail = 0
         self.total_skip = 0
@@ -58,56 +63,41 @@ class ESP32TestRunner:
         self.suite_results = []
 
     def connect(self):
-        """Open serial connection, reset the device, and wait for jim> prompt."""
+        """Open serial, reset device, wait for jim> prompt."""
         self.ser = serial.Serial(self.port, self.baud, timeout=1)
-
-        # Reset the ESP32 via RTS toggle
         print(colorize(f"Connecting to {self.port}...", Colors.CYAN))
+
+        # Reset ESP32 via RTS
         self.ser.dtr = False
         self.ser.rts = True
         time.sleep(0.1)
         self.ser.rts = False
 
-        # Wait for boot to complete and jim> prompt to appear (up to 15s)
-        print("Waiting for ESP32 boot...", end=" ")
-        deadline = time.time() + 15
-        buf = ""
-        while time.time() < deadline:
-            if self.ser.in_waiting:
-                chunk = self.ser.read(self.ser.in_waiting).decode('utf-8', errors='replace')
-                buf += chunk
-                if 'jim>' in buf:
-                    break
-            else:
-                time.sleep(0.1)
-
+        # Wait for jim> prompt (up to 15s)
+        print("Waiting for boot...", end=" ")
+        buf = self._read_until(r'jim>', timeout=15)
         if 'jim>' not in buf:
-            print(colorize("TIMEOUT - no jim> prompt detected", Colors.RED))
-            print("Last output:", buf[-200:] if len(buf) > 200 else buf)
+            print(colorize("TIMEOUT", Colors.RED))
             sys.exit(2)
-
-        # Drain any remaining output
-        time.sleep(0.3)
-        if self.ser.in_waiting:
-            self.ser.read(self.ser.in_waiting)
-
         print(colorize("OK", Colors.GREEN))
-        print(colorize(f"Connected to {self.port} at {self.baud} baud", Colors.CYAN))
+
+        # Drain remaining boot output
+        self._drain(0.5)
+        print(colorize(f"Connected at {self.baud} baud\n", Colors.CYAN))
 
     def disconnect(self):
         if self.ser:
             self.ser.close()
 
-    def _send_line(self, line):
-        """Send a line to the ESP32 REPL."""
-        self.ser.write((line + "\r\n").encode('utf-8'))
-        self.ser.flush()
-        time.sleep(0.02)  # Small delay between lines
+    def _drain(self, wait=0.3):
+        """Drain serial buffer."""
+        time.sleep(wait)
+        while self.ser.in_waiting:
+            self.ser.read(self.ser.in_waiting)
+            time.sleep(0.05)
 
-    def _read_until_prompt(self, timeout=None):
-        """Read serial output until we see 'jim> ' or timeout."""
-        if timeout is None:
-            timeout = self.timeout
+    def _read_until(self, pattern, timeout=10):
+        """Read serial until pattern found or timeout."""
         buf = ""
         deadline = time.time() + timeout
         while time.time() < deadline:
@@ -117,22 +107,44 @@ class ESP32TestRunner:
                 if self.verbose:
                     sys.stdout.write(chunk)
                     sys.stdout.flush()
-                # Check for prompt at end of output
-                if re.search(r'jim> \s*$', buf):
+                if re.search(pattern, buf):
                     return buf
             else:
-                time.sleep(0.05)
+                time.sleep(0.02)
         return buf
 
-    def _wait_for_prompt(self, timeout=5):
-        """Wait for the jim> prompt to appear."""
-        self._read_until_prompt(timeout=timeout)
+    def _send_and_wait(self, cmd, timeout=10):
+        """Send a command and wait for jim> prompt. Returns output."""
+        self.ser.write((cmd + "\r\n").encode('utf-8'))
+        self.ser.flush()
+        time.sleep(0.03)
+
+        buf = ""
+        deadline = time.time() + timeout
+        # Allow a brief settling period after sending
+        while time.time() < deadline:
+            if self.ser.in_waiting:
+                chunk = self.ser.read(self.ser.in_waiting).decode('utf-8', errors='replace')
+                buf += chunk
+                if self.verbose:
+                    sys.stdout.write(chunk)
+                    sys.stdout.flush()
+                if PROMPT_RE.search(buf):
+                    # Wait a tiny bit more in case more data follows
+                    time.sleep(0.05)
+                    if self.ser.in_waiting:
+                        extra = self.ser.read(self.ser.in_waiting).decode('utf-8', errors='replace')
+                        buf += extra
+                        if self.verbose:
+                            sys.stdout.write(extra)
+                            sys.stdout.flush()
+                    return buf
+            else:
+                time.sleep(0.02)
+        return buf
 
     def _coalesce_commands(self, script):
-        """Group script lines into complete Tcl commands by tracking brace depth.
-
-        Returns a list of complete command strings, each safe to send as one unit.
-        """
+        """Group script lines into complete Tcl commands by tracking brace depth."""
         commands = []
         current = ""
         depth = 0
@@ -140,14 +152,12 @@ class ESP32TestRunner:
         for line in script.strip().split('\n'):
             stripped = line.strip()
 
-            # Skip empty lines and comments outside of commands
             if not stripped and depth == 0:
                 continue
             if stripped.startswith('#') and depth == 0:
                 commands.append(stripped)
                 continue
 
-            # Track brace depth (naive but sufficient for test scripts)
             for ch in stripped:
                 if ch == '{':
                     depth += 1
@@ -155,7 +165,6 @@ class ESP32TestRunner:
                     depth -= 1
 
             if current:
-                # Use semicolons inside braces to keep bodies as valid Tcl
                 current += "; " + stripped if depth > 0 else " " + stripped
             else:
                 current = stripped
@@ -170,49 +179,10 @@ class ESP32TestRunner:
 
         return commands
 
-    def _send_script(self, script):
-        """Send a multi-line script and collect all output.
-
-        Coalesces multi-line Tcl commands (brace-balanced) into single lines
-        before sending, so the REPL receives complete commands.
-        """
-        commands = self._coalesce_commands(script)
-        all_output = ""
-
-        for cmd in commands:
-            # Determine timeout
-            if any(kw in cmd for kw in ['http ', 'mqtt ', 'wifi ', 'esp32 sleep',
-                                         'task create', 'task eval', 'ota ']):
-                line_timeout = self.timeout
-            else:
-                line_timeout = 10
-
-            self._send_line(cmd)
-
-            # Read until jim> prompt (not > continuation)
-            buf = ""
-            deadline = time.time() + line_timeout
-            while time.time() < deadline:
-                if self.ser.in_waiting:
-                    chunk = self.ser.read(self.ser.in_waiting).decode('utf-8', errors='replace')
-                    buf += chunk
-                    if self.verbose:
-                        sys.stdout.write(chunk)
-                        sys.stdout.flush()
-                    if re.search(r'jim> \s*$', buf):
-                        break
-                else:
-                    time.sleep(0.02)
-
-            all_output += buf
-
-        return all_output
-
     def set_constraints(self, constraints):
         """Set test constraints on the device."""
         for name, value in constraints.items():
-            self._send_line(f"test constraint {name} {value}")
-            self._read_until_prompt(timeout=2)
+            self._send_and_wait(f"test constraint {name} {value}", timeout=3)
 
     def run_test_file(self, filepath):
         """Send a test file to the ESP32 and parse results."""
@@ -226,37 +196,58 @@ class ESP32TestRunner:
         with open(filepath, 'r') as f:
             script = f.read()
 
-        output = self._send_script(script)
+        commands = self._coalesce_commands(script)
+        all_output = ""
 
-        # Parse results from output
-        passes = re.findall(r'PASS:\s+(\S+)', output)
-        fails = re.findall(r'FAIL:\s+(\S+)(?:\s+\(.*?\))?\s*-\s*(.*)', output)
-        skips = re.findall(r'SKIP:\s+(\S+)', output)
+        for cmd in commands:
+            # Skip comments
+            if cmd.startswith('#'):
+                if self.verbose:
+                    print(colorize(f"  # {cmd[2:]}", Colors.DIM))
+                continue
 
-        # Parse the test report line if present
-        report_match = re.search(
-            r'Total:\s*(\d+)\s+Pass:\s*(\d+)\s+Fail:\s*(\d+)\s+Skip:\s*(\d+)',
-            output
-        )
+            # Determine timeout
+            if any(kw in cmd for kw in ['http ', 'mqtt ', 'wifi ', 'esp32 sleep',
+                                         'task create', 'task eval', 'ota ',
+                                         'cron add', 'timer create']):
+                cmd_timeout = self.timeout
+            else:
+                cmd_timeout = 10
 
-        suite_pass = len(passes)
-        suite_fail = len(fails)
-        suite_skip = len(skips)
+            output = self._send_and_wait(cmd, timeout=cmd_timeout)
+            all_output += output
+
+        # Parse results from accumulated output
+        passes = PASS_RE.findall(all_output)
+        skips = SKIP_RE.findall(all_output)
+
+        # Parse FAIL lines — capture test ID and reason
+        fail_details = []
+        for m in re.finditer(r'FAIL:\s+(\S+)\s+\(([^)]*)\)\s*(?:-\s*(.*))?', all_output):
+            tid = m.group(1)
+            desc = m.group(2)
+            reason = m.group(3) or desc
+            fail_details.append((tid, reason.strip()))
+
+        # Parse the device's report dict: "total N pass N fail N skip N"
+        report_match = REPORT_DICT_RE.search(all_output)
 
         if report_match:
-            # Prefer the device's own count
             suite_total = int(report_match.group(1))
             suite_pass = int(report_match.group(2))
             suite_fail = int(report_match.group(3))
             suite_skip = int(report_match.group(4))
         else:
+            suite_pass = len(passes)
+            suite_fail = len(fail_details)
+            suite_skip = len(skips)
             suite_total = suite_pass + suite_fail + suite_skip
 
-        # Print per-test results if not verbose (verbose already printed them)
+        # Print per-test results (non-verbose only)
         if not self.verbose:
             for test_id in passes:
                 print(f"  {colorize('PASS', Colors.GREEN)}: {test_id}")
-            for test_id, reason in fails:
+            for test_id, reason in fail_details:
                 print(f"  {colorize('FAIL', Colors.RED)}: {test_id} - {reason}")
             for test_id in skips:
                 print(f"  {colorize('SKIP', Colors.YELLOW)}: {test_id}")
@@ -269,11 +260,10 @@ class ESP32TestRunner:
               f"Fail: {colorize(str(suite_fail), Colors.RED) if suite_fail else '0'}  "
               f"Skip: {suite_skip})")
 
-        # Accumulate
         self.total_pass += suite_pass
         self.total_fail += suite_fail
         self.total_skip += suite_skip
-        self.failed_tests.extend([(suite_name, tid, reason) for tid, reason in fails])
+        self.failed_tests.extend([(suite_name, tid, reason) for tid, reason in fail_details])
         self.suite_results.append({
             'name': suite_name,
             'total': suite_total,
@@ -281,6 +271,9 @@ class ESP32TestRunner:
             'fail': suite_fail,
             'skip': suite_skip,
         })
+
+        # Drain between suites to prevent stale data
+        self._drain(0.2)
 
     def print_summary(self):
         """Print final summary across all suites."""
@@ -290,13 +283,13 @@ class ESP32TestRunner:
         print(colorize(f"  FINAL RESULTS", Colors.BOLD))
         print(colorize(f"{'='*60}", Colors.BOLD))
 
-        # Per-suite table
         max_name = max(len(s['name']) for s in self.suite_results) if self.suite_results else 10
-        print(f"\n  {'Suite':<{max_name}}  Total  Pass  Fail  Skip")
-        print(f"  {'-'*max_name}  -----  ----  ----  ----")
+        print(f"\n  {'Suite':<{max_name}}  Total  Pass  Fail  Skip  Status")
+        print(f"  {'-'*max_name}  -----  ----  ----  ----  ------")
         for s in self.suite_results:
-            fail_str = colorize(str(s['fail']), Colors.RED) if s['fail'] else '0'
-            print(f"  {s['name']:<{max_name}}  {s['total']:>5}  {s['pass']:>4}  {fail_str:>4}  {s['skip']:>4}")
+            fail_str = colorize(str(s['fail']), Colors.RED) if s['fail'] else '   0'
+            st = colorize("PASS", Colors.GREEN) if s['fail'] == 0 else colorize("FAIL", Colors.RED)
+            print(f"  {s['name']:<{max_name}}  {s['total']:>5}  {s['pass']:>4}  {fail_str}  {s['skip']:>4}  {st}")
 
         print(f"\n  {colorize('Total', Colors.BOLD)}: {total}  "
               f"{colorize('Pass', Colors.GREEN)}: {self.total_pass}  "
@@ -309,105 +302,74 @@ class ESP32TestRunner:
                 print(f"    {suite}: {tid} - {reason}")
 
         if self.total_fail == 0:
-            print(colorize(f"\n  ALL TESTS PASSED", Colors.GREEN))
+            print(colorize(f"\n  ALL TESTS PASSED ✓", Colors.GREEN))
         else:
-            print(colorize(f"\n  {self.total_fail} TEST(S) FAILED", Colors.RED))
+            print(colorize(f"\n  {self.total_fail} TEST(S) FAILED ✗", Colors.RED))
 
         print()
-
-
-def find_test_files(test_dir):
-    """Find all .test files in the test directory."""
-    pattern = os.path.join(test_dir, "*.test")
-    files = sorted(glob.glob(pattern))
-    return files
+        return self.total_fail == 0
 
 
 def main():
     parser = argparse.ArgumentParser(description="ESP32 Jim Tcl Test Runner")
     parser.add_argument("port", help="Serial port (e.g., /dev/cu.usbserial-2110)")
-    parser.add_argument("tests", nargs="*", help="Specific test files to run (default: all)")
+    parser.add_argument("tests", nargs="*", help="Specific test files to run")
     parser.add_argument("--all", action="store_true", help="Run all test files")
-    parser.add_argument("--baud", type=int, default=115200, help="Baud rate (default: 115200)")
-    parser.add_argument("--timeout", type=int, default=30, help="Per-command timeout in seconds")
-    parser.add_argument("--verbose", "-v", action="store_true", help="Show all serial output")
+    parser.add_argument("--baud", type=int, default=115200, help="Baud rate")
+    parser.add_argument("--timeout", type=int, default=30, help="Per-command timeout (s)")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Show serial output")
     parser.add_argument("--constraint", "-c", action="append", default=[],
-                        help="Set constraint: name=value (can repeat)")
-    parser.add_argument("--test-dir", default=None,
-                        help="Directory containing .test files")
+                        help="Set constraint: name=value")
+    parser.add_argument("--test-dir", default=None, help="Test file directory")
 
     args = parser.parse_intermixed_args()
-
-    # Determine test directory
     test_dir = args.test_dir or os.path.dirname(os.path.abspath(__file__))
 
-    # Determine which test files to run
     if args.tests:
         test_files = []
         for t in args.tests:
-            if os.path.isfile(t):
-                test_files.append(t)
+            path = t if os.path.isfile(t) else os.path.join(test_dir, t)
+            if os.path.isfile(path):
+                test_files.append(path)
             else:
-                # Try relative to test_dir
-                path = os.path.join(test_dir, t)
-                if os.path.isfile(path):
-                    test_files.append(path)
-                else:
-                    print(f"Warning: test file not found: {t}")
+                print(f"Warning: not found: {t}")
     elif args.all:
-        test_files = find_test_files(test_dir)
+        test_files = sorted(glob.glob(os.path.join(test_dir, "*.test")))
     else:
-        # Default: run hardware-independent tests only
-        safe_tests = [
-            "core.test", "json.test", "esp32.test", "task.test",
-            "cron.test", "timer.test", "fs.test", "nvs.test",
-            "adc.test", "pwm.test",
-        ]
-        test_files = [os.path.join(test_dir, t) for t in safe_tests
+        safe = ["core.test", "json.test", "esp32.test", "task.test", "cron.test",
+                "timer.test", "fs.test", "nvs.test", "adc.test", "pwm.test"]
+        test_files = [os.path.join(test_dir, t) for t in safe
                       if os.path.isfile(os.path.join(test_dir, t))]
 
     if not test_files:
         print("No test files found.")
         sys.exit(1)
 
-    # Parse constraints
     constraints = {}
     for c in args.constraint:
-        if '=' in c:
-            name, value = c.split('=', 1)
-            constraints[name] = value
-        else:
-            constraints[c] = "1"
+        name, _, value = c.partition('=')
+        constraints[name] = value or "1"
 
-    # Run
-    runner = ESP32TestRunner(
-        port=args.port,
-        baud=args.baud,
-        timeout=args.timeout,
-        verbose=args.verbose,
-    )
+    runner = ESP32TestRunner(args.port, args.baud, args.timeout, args.verbose)
 
     try:
         runner.connect()
-
         if constraints:
             print(f"Setting constraints: {constraints}")
             runner.set_constraints(constraints)
-
-        for filepath in test_files:
-            runner.run_test_file(filepath)
-
-        runner.print_summary()
-
+        for f in test_files:
+            runner.run_test_file(f)
+        success = runner.print_summary()
     except serial.SerialException as e:
         print(f"Serial error: {e}", file=sys.stderr)
         sys.exit(2)
     except KeyboardInterrupt:
         print("\nInterrupted.")
+        sys.exit(130)
     finally:
         runner.disconnect()
 
-    sys.exit(0 if runner.total_fail == 0 else 1)
+    sys.exit(0 if success else 1)
 
 
 if __name__ == "__main__":
