@@ -113,6 +113,8 @@ typedef enum {
     BLE_EVT_NOTIFY,          /* incoming notification (central mode) */
     BLE_EVT_MTU,
     BLE_EVT_SUBSCRIBE,
+    BLE_EVT_PASSKEY,         /* passkey action (display or entry) */
+    BLE_EVT_ENC_CHANGE,      /* encryption state changed */
 } ble_evt_type_t;
 
 typedef struct {
@@ -127,6 +129,9 @@ typedef struct {
     int data_len;
     int status;              /* 0=ok, nonzero=error */
     uint16_t mtu;
+    uint8_t passkey_action;  /* BLE_SM_IOACT_DISP, BLE_SM_IOACT_INPUT, etc */
+    uint32_t passkey;        /* passkey value (for display or numcmp) */
+    int encrypted;           /* encryption state after ENC_CHANGE */
 } ble_event_t;
 
 /* Synchronous operation completion */
@@ -150,6 +155,14 @@ typedef struct {
     char on_disconnect_proc[64]; char on_disconnect_target[16];
     char on_scan_proc[64];       char on_scan_target[16];
     char on_write_proc[64];      char on_write_target[16];
+    char on_passkey_proc[64];    char on_passkey_target[16];
+
+    /* Security configuration */
+    int sm_bonding;             /* 1 = save bonds to NVS */
+    int sm_mitm;                /* 1 = require MITM protection */
+    int sm_sc;                  /* 1 = Secure Connections (BLE 4.2+) */
+    int sm_io_cap;              /* BLE_SM_IO_CAP_* value */
+    uint32_t sm_passkey;        /* fixed passkey for display mode */
 
     /* GATT server */
     ble_service_t services[BLE_MAX_SERVICES];
@@ -585,6 +598,57 @@ static int ble_gap_event_cb(struct ble_gap_event *event, void *arg)
         return BLE_GAP_REPEAT_PAIRING_RETRY;
     }
 
+    case BLE_GAP_EVENT_PASSKEY_ACTION: {
+        evt.type = BLE_EVT_PASSKEY;
+        evt.conn_handle = event->passkey.conn_handle;
+        evt.passkey_action = event->passkey.params.action;
+
+        if (event->passkey.params.action == BLE_SM_IOACT_DISP) {
+            /* We need to display a passkey */
+            uint32_t pk = ble.sm_passkey;
+            if (pk == 0) {
+                /* Generate random passkey */
+                pk = (esp_random() % 999999) + 1;
+            }
+            evt.passkey = pk;
+            struct ble_sm_io pkey = {0};
+            pkey.action = BLE_SM_IOACT_DISP;
+            pkey.passkey = pk;
+            ble_sm_inject_io(event->passkey.conn_handle, &pkey);
+            ESP_LOGI(TAG, "Passkey display: %06lu", (unsigned long)pk);
+        }
+        else if (event->passkey.params.action == BLE_SM_IOACT_INPUT) {
+            /* We need to input a passkey — deliver to Tcl callback */
+            evt.passkey = 0;
+            ESP_LOGI(TAG, "Passkey input required on conn %d", event->passkey.conn_handle);
+        }
+        else if (event->passkey.params.action == BLE_SM_IOACT_NUMCMP) {
+            /* Numeric comparison — display and confirm */
+            evt.passkey = event->passkey.params.numcmp;
+            ESP_LOGI(TAG, "Numeric comparison: %06lu", (unsigned long)event->passkey.params.numcmp);
+            /* Auto-confirm for now (Tcl callback can override) */
+            struct ble_sm_io pkey = {0};
+            pkey.action = BLE_SM_IOACT_NUMCMP;
+            pkey.numcmp_accept = 1;
+            ble_sm_inject_io(event->passkey.conn_handle, &pkey);
+        }
+        else if (event->passkey.params.action == BLE_SM_IOACT_NONE) {
+            /* Just Works — nothing to do */
+            evt.passkey = 0;
+        }
+        break;
+    }
+
+    case BLE_GAP_EVENT_ENC_CHANGE: {
+        evt.type = BLE_EVT_ENC_CHANGE;
+        evt.conn_handle = event->enc_change.conn_handle;
+        evt.status = event->enc_change.status;
+        evt.encrypted = (event->enc_change.status == 0) ? 1 : 0;
+        ESP_LOGI(TAG, "Encryption change: conn=%d status=%d",
+                 event->enc_change.conn_handle, event->enc_change.status);
+        break;
+    }
+
     default:
         return 0;
     }
@@ -690,6 +754,28 @@ static void ble_dispatch_task_fn(void *param)
             ESP_LOGD(TAG, "Subscribe event dispatched: conn=%d char=%d",
                      evt.conn_handle, evt.char_handle);
             break;
+
+        case BLE_EVT_PASSKEY:
+            if (ble.on_passkey_proc[0]) {
+                const char *action_str;
+                switch (evt.passkey_action) {
+                    case BLE_SM_IOACT_DISP:   action_str = "display"; break;
+                    case BLE_SM_IOACT_INPUT:  action_str = "input"; break;
+                    case BLE_SM_IOACT_NUMCMP: action_str = "numcmp"; break;
+                    case BLE_SM_IOACT_NONE:   action_str = "none"; break;
+                    default:                  action_str = "unknown"; break;
+                }
+                snprintf(script, sizeof(script), "%s %d %s %lu",
+                         ble.on_passkey_proc, evt.conn_handle,
+                         action_str, (unsigned long)evt.passkey);
+                task_send_to_name(ble.on_passkey_target, script);
+            }
+            break;
+
+        case BLE_EVT_ENC_CHANGE:
+            ESP_LOGI(TAG, "Encryption: conn=%d encrypted=%d",
+                     evt.conn_handle, evt.encrypted);
+            break;
         }
     }
 }
@@ -794,11 +880,63 @@ static int ble_cmd_init(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 {
     const char *name = "JimTcl-BLE";
 
+    /* Security defaults: Just Works, no bonding */
+    ble.sm_bonding = 0;
+    ble.sm_mitm = 0;
+    ble.sm_sc = 1;  /* Secure Connections enabled by default */
+    ble.sm_io_cap = BLE_SM_IO_CAP_NO_IO;
+    ble.sm_passkey = 0;
+
     for (int i = 0; i < argc; i++) {
         const char *opt = Jim_String(argv[i]);
         if (strcmp(opt, "-name") == 0 && i + 1 < argc) {
             name = Jim_String(argv[++i]);
-        } else {
+        }
+        else if (strcmp(opt, "-security") == 0 && i + 1 < argc) {
+            /* Parse security dict: {mode just_works|passkey|numcmp bonding 0|1 pin NNNNNN} */
+            Jim_Obj *secDict = argv[++i];
+            int secLen = Jim_ListLength(interp, secDict);
+            for (int j = 0; j < secLen - 1; j += 2) {
+                const char *skey = Jim_String(Jim_ListGetIndex(interp, secDict, j));
+                Jim_Obj *sval = Jim_ListGetIndex(interp, secDict, j + 1);
+                if (strcmp(skey, "mode") == 0) {
+                    const char *mode = Jim_String(sval);
+                    if (strcmp(mode, "just_works") == 0) {
+                        ble.sm_io_cap = BLE_SM_IO_CAP_NO_IO;
+                        ble.sm_mitm = 0;
+                    } else if (strcmp(mode, "passkey") == 0) {
+                        ble.sm_io_cap = BLE_SM_IO_CAP_DISP_ONLY;
+                        ble.sm_mitm = 1;
+                    } else if (strcmp(mode, "passkey_input") == 0) {
+                        ble.sm_io_cap = BLE_SM_IO_CAP_KEYBOARD_ONLY;
+                        ble.sm_mitm = 1;
+                    } else if (strcmp(mode, "passkey_both") == 0) {
+                        ble.sm_io_cap = BLE_SM_IO_CAP_KEYBOARD_DISP;
+                        ble.sm_mitm = 1;
+                    } else if (strcmp(mode, "numcmp") == 0) {
+                        ble.sm_io_cap = BLE_SM_IO_CAP_KEYBOARD_DISP;
+                        ble.sm_mitm = 1;
+                    } else {
+                        Jim_SetResultFormatted(interp,
+                            "bad security mode \"%s\": should be just_works, passkey, passkey_input, passkey_both, or numcmp", mode);
+                        return JIM_ERR;
+                    }
+                } else if (strcmp(skey, "bonding") == 0) {
+                    long v;
+                    if (Jim_GetLong(interp, sval, &v) != JIM_OK) return JIM_ERR;
+                    ble.sm_bonding = (int)v;
+                } else if (strcmp(skey, "pin") == 0) {
+                    long v;
+                    if (Jim_GetLong(interp, sval, &v) != JIM_OK) return JIM_ERR;
+                    if (v < 0 || v > 999999) {
+                        Jim_SetResultString(interp, "pin must be 0-999999", -1);
+                        return JIM_ERR;
+                    }
+                    ble.sm_passkey = (uint32_t)v;
+                }
+            }
+        }
+        else {
             Jim_SetResultFormatted(interp, "unknown option \"%s\"", opt);
             return JIM_ERR;
         }
@@ -841,6 +979,14 @@ static int ble_cmd_init(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
     ble_hs_cfg.sync_cb = on_sync;
     ble_hs_cfg.gatts_register_cb = gatt_register_cb;
     ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
+
+    /* Security Manager configuration */
+    ble_hs_cfg.sm_io_cap = ble.sm_io_cap;
+    ble_hs_cfg.sm_bonding = ble.sm_bonding;
+    ble_hs_cfg.sm_mitm = ble.sm_mitm;
+    ble_hs_cfg.sm_sc = ble.sm_sc;
+    ble_hs_cfg.sm_our_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
+    ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
 
     /* Initialize GAP and GATT services */
     ble_svc_gap_init();
@@ -2139,8 +2285,13 @@ static int ble_cmd_on(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
         target_buf = ble.on_write_target;
         proc_size = sizeof(ble.on_write_proc);
         target_size = sizeof(ble.on_write_target);
+    } else if (strcmp(event_name, "passkey") == 0) {
+        proc_buf = ble.on_passkey_proc;
+        target_buf = ble.on_passkey_target;
+        proc_size = sizeof(ble.on_passkey_proc);
+        target_size = sizeof(ble.on_passkey_target);
     } else {
-        Jim_SetResultFormatted(interp, "unknown event \"%s\": should be connect, disconnect, scan, or write",
+        Jim_SetResultFormatted(interp, "unknown event \"%s\": should be connect, disconnect, scan, write, or passkey",
                                event_name);
         return JIM_ERR;
     }
@@ -2188,6 +2339,55 @@ static int ble_cmd_on(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 /* ---------------------------------------------------------------------------
  * Subcommand table and init
  * ---------------------------------------------------------------------------*/
+
+/* ---------------------------------------------------------------------------
+ * Subcommand: ble passkey <conn_handle> <passkey>
+ * Input a passkey when the remote device requests passkey entry.
+ * ---------------------------------------------------------------------------*/
+
+static int ble_cmd_passkey_input(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
+{
+    long conn_handle, passkey;
+    if (Jim_GetLong(interp, argv[0], &conn_handle) != JIM_OK) return JIM_ERR;
+    if (Jim_GetLong(interp, argv[1], &passkey) != JIM_OK) return JIM_ERR;
+
+    if (passkey < 0 || passkey > 999999) {
+        Jim_SetResultString(interp, "passkey must be 0-999999", -1);
+        return JIM_ERR;
+    }
+
+    struct ble_sm_io pkey = {0};
+    pkey.action = BLE_SM_IOACT_INPUT;
+    pkey.passkey = (uint32_t)passkey;
+
+    int rc = ble_sm_inject_io((uint16_t)conn_handle, &pkey);
+    if (rc != 0) {
+        Jim_SetResultFormatted(interp, "passkey input failed: %d", rc);
+        return JIM_ERR;
+    }
+
+    return JIM_OK;
+}
+
+/* ---------------------------------------------------------------------------
+ * Subcommand: ble pair <conn_handle>
+ * Initiate security/pairing on an existing connection.
+ * ---------------------------------------------------------------------------*/
+
+static int ble_cmd_pair(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
+{
+    long conn_handle;
+    if (Jim_GetLong(interp, argv[0], &conn_handle) != JIM_OK) return JIM_ERR;
+
+    int rc = ble_gap_security_initiate((uint16_t)conn_handle);
+    if (rc != 0) {
+        Jim_SetResultFormatted(interp, "pairing initiate failed: %d", rc);
+        return JIM_ERR;
+    }
+
+    Jim_SetResultString(interp, "ok", -1);
+    return JIM_OK;
+}
 
 static const jim_subcmd_type ble_command_table[] = {
     {   "init",
@@ -2308,6 +2508,20 @@ static const jim_subcmd_type ble_command_table[] = {
         1,
         -1,
         /* Description: Set event callbacks */
+    },
+    {   "passkey",
+        "conn_handle passkey",
+        ble_cmd_passkey_input,
+        2,
+        2,
+        /* Description: Input passkey for pairing (when passkey entry requested) */
+    },
+    {   "pair",
+        "conn_handle",
+        ble_cmd_pair,
+        1,
+        1,
+        /* Description: Initiate pairing/bonding with connected device */
     },
     { NULL }
 };
