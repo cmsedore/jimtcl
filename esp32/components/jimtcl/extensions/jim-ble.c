@@ -2341,6 +2341,105 @@ static int ble_cmd_on(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
  * ---------------------------------------------------------------------------*/
 
 /* ---------------------------------------------------------------------------
+ * Subcommand: ble bonds list|clear|remove <addr>
+ * ---------------------------------------------------------------------------*/
+
+static int ble_cmd_bonds(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
+{
+    if (argc < 1) {
+        Jim_SetResultString(interp,
+            "wrong # args: should be \"ble bonds list|clear|remove <addr>\"", -1);
+        return JIM_ERR;
+    }
+
+    const char *subcmd = Jim_String(argv[0]);
+
+    if (strcmp(subcmd, "list") == 0) {
+        ble_addr_t peer_addrs[MYNEWT_VAL(BLE_STORE_MAX_BONDS)];
+        int num_peers = 0;
+        int rc = ble_store_util_bonded_peers(peer_addrs, &num_peers,
+                     MYNEWT_VAL(BLE_STORE_MAX_BONDS));
+        if (rc != 0) {
+            Jim_SetResultFormatted(interp, "failed to enumerate bonds: %d", rc);
+            return JIM_ERR;
+        }
+
+        Jim_Obj *result = Jim_NewListObj(interp, NULL, 0);
+        for (int i = 0; i < num_peers; i++) {
+            char addr_str[18];
+            snprintf(addr_str, sizeof(addr_str), "%02X:%02X:%02X:%02X:%02X:%02X",
+                     peer_addrs[i].val[5], peer_addrs[i].val[4],
+                     peer_addrs[i].val[3], peer_addrs[i].val[2],
+                     peer_addrs[i].val[1], peer_addrs[i].val[0]);
+
+            Jim_Obj *entry = Jim_NewListObj(interp, NULL, 0);
+            Jim_ListAppendElement(interp, entry, Jim_NewStringObj(interp, "addr", -1));
+            Jim_ListAppendElement(interp, entry, Jim_NewStringObj(interp, addr_str, -1));
+            Jim_ListAppendElement(interp, entry, Jim_NewStringObj(interp, "addr_type", -1));
+            Jim_ListAppendElement(interp, entry, Jim_NewStringObj(interp,
+                peer_addrs[i].type == BLE_ADDR_PUBLIC ? "public" : "random", -1));
+            Jim_ListAppendElement(interp, result, entry);
+        }
+        Jim_SetResult(interp, result);
+        return JIM_OK;
+    }
+
+    if (strcmp(subcmd, "clear") == 0) {
+        int rc = ble_store_clear();
+        if (rc != 0) {
+            Jim_SetResultFormatted(interp, "failed to clear bonds: %d", rc);
+            return JIM_ERR;
+        }
+        Jim_SetResultString(interp, "ok", -1);
+        return JIM_OK;
+    }
+
+    if (strcmp(subcmd, "remove") == 0) {
+        if (argc < 2) {
+            Jim_SetResultString(interp, "missing address for bonds remove", -1);
+            return JIM_ERR;
+        }
+        const char *addr_str = Jim_String(argv[1]);
+        ble_addr_t addr;
+        /* Parse MAC address */
+        unsigned int m[6];
+        if (sscanf(addr_str, "%02x:%02x:%02x:%02x:%02x:%02x",
+                   &m[5], &m[4], &m[3], &m[2], &m[1], &m[0]) != 6 &&
+            sscanf(addr_str, "%02X:%02X:%02X:%02X:%02X:%02X",
+                   &m[5], &m[4], &m[3], &m[2], &m[1], &m[0]) != 6) {
+            Jim_SetResultFormatted(interp, "invalid MAC address: %s", addr_str);
+            return JIM_ERR;
+        }
+        for (int i = 0; i < 6; i++) addr.val[i] = (uint8_t)m[i];
+
+        /* Try both public and random address types */
+        addr.type = BLE_ADDR_PUBLIC;
+        int rc = ble_store_util_delete_peer(&addr);
+        if (rc != 0) {
+            addr.type = BLE_ADDR_RANDOM;
+            rc = ble_store_util_delete_peer(&addr);
+        }
+        if (rc != 0) {
+            Jim_SetResultFormatted(interp, "bond not found for %s", addr_str);
+            return JIM_ERR;
+        }
+        Jim_SetResultString(interp, "ok", -1);
+        return JIM_OK;
+    }
+
+    if (strcmp(subcmd, "count") == 0) {
+        int count = 0;
+        ble_store_util_count(BLE_STORE_OBJ_TYPE_OUR_SEC, &count);
+        Jim_SetResultInt(interp, count);
+        return JIM_OK;
+    }
+
+    Jim_SetResultFormatted(interp,
+        "unknown bonds subcommand \"%s\": should be list, clear, remove, or count", subcmd);
+    return JIM_ERR;
+}
+
+/* ---------------------------------------------------------------------------
  * Subcommand: ble passkey <conn_handle> <passkey>
  * Input a passkey when the remote device requests passkey entry.
  * ---------------------------------------------------------------------------*/
@@ -2508,6 +2607,13 @@ static const jim_subcmd_type ble_command_table[] = {
         1,
         -1,
         /* Description: Set event callbacks */
+    },
+    {   "bonds",
+        "list|clear|remove <addr>|count",
+        ble_cmd_bonds,
+        1,
+        -1,
+        /* Description: Manage bonded devices (list, remove, clear all) */
     },
     {   "passkey",
         "conn_handle passkey",
