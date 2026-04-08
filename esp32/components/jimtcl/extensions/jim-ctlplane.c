@@ -47,7 +47,7 @@ static const char *TAG = "jim-ctlplane";
 
 #define CTLPLANE_RX_BUF      4096
 #define CTLPLANE_TX_BUF      0
-#define CTLPLANE_STACK_SIZE   8192
+#define CTLPLANE_STACK_SIZE   12288
 #define CTLPLANE_PRIORITY     6
 #define CTLPLANE_MAX_FRAME    4096
 #define CTLPLANE_RESPONSE_BUF 4096
@@ -711,7 +711,8 @@ static void handle_vars_load(ctlplane_state_t *state, mpack_node_t root,
     /* Determine target interpreter */
     Jim_Interp *target_interp = state->main_interp;
     mpack_node_t target_node = mpack_node_map_cstr(root, "target");
-    if (!mpack_node_is_missing(target_node)) {
+    if (!mpack_node_is_missing(target_node) && !mpack_node_is_nil(target_node) &&
+        mpack_node_type(target_node) == mpack_type_str) {
         const char *target = mpack_node_str(target_node);
         size_t target_len = mpack_node_strlen(target_node);
         char name_buf[16];
@@ -792,7 +793,8 @@ static void handle_vars_get(ctlplane_state_t *state, mpack_node_t root,
     /* Determine target interpreter */
     Jim_Interp *target_interp = state->main_interp;
     mpack_node_t target_node = mpack_node_map_cstr(root, "target");
-    if (!mpack_node_is_missing(target_node)) {
+    if (!mpack_node_is_missing(target_node) && !mpack_node_is_nil(target_node) &&
+        mpack_node_type(target_node) == mpack_type_str) {
         const char *target = mpack_node_str(target_node);
         size_t target_len = mpack_node_strlen(target_node);
         char name_buf[16];
@@ -924,13 +926,16 @@ static void ctlplane_process_frame(ctlplane_state_t *state,
     if (mpack_node_is_missing(cmd_node)) {
         ESP_LOGW(TAG, "Frame missing 'cmd' field");
         /* Send error response */
-        char resp_buf[CTLPLANE_RESPONSE_BUF];
-        mpack_writer_t writer;
-        mpack_writer_init(&writer, resp_buf, sizeof(resp_buf));
-        write_error(&writer, "missing 'cmd' field");
-        size_t resp_len = mpack_writer_buffer_used(&writer);
-        if (mpack_writer_destroy(&writer) == mpack_ok) {
-            send_response_serial(state->uart_port, resp_buf, resp_len);
+        char *err_buf = malloc(256);
+        if (err_buf) {
+            mpack_writer_t writer;
+            mpack_writer_init(&writer, err_buf, 256);
+            write_error(&writer, "missing 'cmd' field");
+            size_t resp_len = mpack_writer_buffer_used(&writer);
+            if (mpack_writer_destroy(&writer) == mpack_ok) {
+                send_response_serial(state->uart_port, err_buf, resp_len);
+            }
+            free(err_buf);
         }
         mpack_tree_destroy(&tree);
         free(decoded);
@@ -950,10 +955,16 @@ static void ctlplane_process_frame(ctlplane_state_t *state,
         }
     }
 
-    /* Prepare response writer */
-    char resp_buf[CTLPLANE_RESPONSE_BUF];
+    /* Prepare response writer (heap-allocated to avoid stack overflow) */
+    char *resp_buf = malloc(CTLPLANE_RESPONSE_BUF);
+    if (!resp_buf) {
+        ESP_LOGE(TAG, "Failed to allocate response buffer");
+        mpack_tree_destroy(&tree);
+        free(decoded);
+        return;
+    }
     mpack_writer_t writer;
-    mpack_writer_init(&writer, resp_buf, sizeof(resp_buf));
+    mpack_writer_init(&writer, resp_buf, CTLPLANE_RESPONSE_BUF);
 
     if (!entry) {
         ESP_LOGW(TAG, "Unknown control plane command");
@@ -974,6 +985,7 @@ static void ctlplane_process_frame(ctlplane_state_t *state,
 
     mpack_tree_destroy(&tree);
     free(decoded);
+    free(resp_buf);
 }
 
 /* ---------------------------------------------------------------------------
@@ -1083,11 +1095,6 @@ static int ctlplane_cmd_start(Jim_Interp *interp, int argc, Jim_Obj *const *argv
         }
     }
 
-    if (tx_pin < 0 || rx_pin < 0) {
-        Jim_SetResultString(interp, "must specify both -tx and -rx pins", -1);
-        return JIM_ERR;
-    }
-
     /* Configure UART */
     uart_config_t uart_config = {
         .baud_rate = (int)baud,
@@ -1104,11 +1111,14 @@ static int ctlplane_cmd_start(Jim_Interp *interp, int argc, Jim_Obj *const *argv
         return JIM_ERR;
     }
 
-    err = uart_set_pin((uart_port_t)port, (int)tx_pin, (int)rx_pin,
-                       UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
-    if (err != ESP_OK) {
-        Jim_SetResultFormatted(interp, "uart_set_pin failed: %s", esp_err_to_name(err));
-        return JIM_ERR;
+    /* Set pins only if specified (UART 0 uses ROM-configured pins by default) */
+    if (tx_pin >= 0 && rx_pin >= 0) {
+        err = uart_set_pin((uart_port_t)port, (int)tx_pin, (int)rx_pin,
+                           UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+        if (err != ESP_OK) {
+            Jim_SetResultFormatted(interp, "uart_set_pin failed: %s", esp_err_to_name(err));
+            return JIM_ERR;
+        }
     }
 
     err = uart_driver_install((uart_port_t)port, CTLPLANE_RX_BUF, CTLPLANE_TX_BUF,

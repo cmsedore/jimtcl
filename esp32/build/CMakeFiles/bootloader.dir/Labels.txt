@@ -1,0 +1,13 @@
+# Target labels
+ bootloader
+# Source files and their labels
+/Users/cmsedore/esp/jimtcl/esp32/build/CMakeFiles/bootloader
+/Users/cmsedore/esp/jimtcl/esp32/build/CMakeFiles/bootloader.rule
+/Users/cmsedore/esp/jimtcl/esp32/build/CMakeFiles/bootloader-complete.rule
+/Users/cmsedore/esp/jimtcl/esp32/build/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule
+/Users/cmsedore/esp/jimtcl/esp32/build/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule
+/Users/cmsedore/esp/jimtcl/esp32/build/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule
+/Users/cmsedore/esp/jimtcl/esp32/build/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule
+/Users/cmsedore/esp/jimtcl/esp32/build/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule
+/Users/cmsedore/esp/jimtcl/esp32/build/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule
+/Users/cmsedore/esp/jimtcl/esp32/build/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule

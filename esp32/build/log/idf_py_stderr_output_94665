@@ -1,0 +1,31 @@
+info: INFO: Symbol IDF_TARGET_LINUX defined in multiple locations (see below). Please check if this is a correct behavior or a random name match:
+    /Users/cmsedore/esp/esp-idf/Kconfig:128
+    /Users/cmsedore/esp/esp-idf/Kconfig:79
+CMake Deprecation Warning at /Users/cmsedore/esp/esp-idf/components/mbedtls/mbedtls/CMakeLists.txt:21 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+
+
+CMake Error at /Users/cmsedore/esp/esp-idf/tools/cmake/component.cmake:479 (add_library):
+  Cannot find source file:
+
+    /Users/cmsedore/esp/jimtcl/esp32/components/jimtcl/extensions/jim-ctlplane.c
+
+  Tried extensions .c .C .c++ .cc .cpp .cxx .cu .mpp .m .M .mm .ixx .cppm
+  .ccm .cxxm .c++m .h .hh .h++ .hm .hpp .hxx .in .txx .f .F .for .f77 .f90
+  .f95 .f03 .hip .ispc
+Call Stack (most recent call first):
+  components/jimtcl/CMakeLists.txt:160 (idf_component_register)
+
+
+CMake Error at /Users/cmsedore/esp/esp-idf/tools/cmake/component.cmake:479 (add_library):
+  No SOURCES given to target: __idf_jimtcl
+Call Stack (most recent call first):
+  components/jimtcl/CMakeLists.txt:160 (idf_component_register)
+
+
+CMake Generate step failed.  Build files cannot be regenerated correctly.

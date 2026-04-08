@@ -1,0 +1,136 @@
+[0/1] Re-running CMake...
+-- Building ESP-IDF components for target esp32c6
+NOTICE: Processing 2 dependencies:
+NOTICE: [1/2] espressif/esp_websocket_client (1.6.1)
+NOTICE: [2/2] idf (5.3.0)
+-- Project sdkconfig file /Users/cmsedore/esp/jimtcl/esp32/sdkconfig
+Loading defaults file /Users/cmsedore/esp/jimtcl/esp32/sdkconfig.defaults...
+-- App "jimtcl-esp32" version: 0.81-314-g37e3896
+-- Adding linker script /Users/cmsedore/esp/jimtcl/esp32/build/esp-idf/esp_system/ld/memory.ld
+-- Adding linker script /Users/cmsedore/esp/esp-idf/components/esp_system/ld/esp32c6/sections.ld.in
+-- Adding linker script /Users/cmsedore/esp/esp-idf/components/esp_rom/esp32c6/ld/esp32c6.rom.ld
+-- Adding linker script /Users/cmsedore/esp/esp-idf/components/esp_rom/esp32c6/ld/esp32c6.rom.api.ld
+-- Adding linker script /Users/cmsedore/esp/esp-idf/components/esp_rom/esp32c6/ld/esp32c6.rom.rvfp.ld
+-- Adding linker script /Users/cmsedore/esp/esp-idf/components/esp_rom/esp32c6/ld/esp32c6.rom.newlib.ld
+-- Adding linker script /Users/cmsedore/esp/esp-idf/components/esp_rom/esp32c6/ld/esp32c6.rom.version.ld
+-- Adding linker script /Users/cmsedore/esp/esp-idf/components/esp_rom/esp32c6/ld/esp32c6.rom.phy.ld
+-- Adding linker script /Users/cmsedore/esp/esp-idf/components/esp_rom/esp32c6/ld/esp32c6.rom.coexist.ld
+-- Adding linker script /Users/cmsedore/esp/esp-idf/components/esp_rom/esp32c6/ld/esp32c6.rom.net80211.ld
+-- Adding linker script /Users/cmsedore/esp/esp-idf/components/esp_rom/esp32c6/ld/esp32c6.rom.pp.ld
+-- Adding linker script /Users/cmsedore/esp/esp-idf/components/esp_rom/esp32c6/ld/esp32c6.rom.wdt.ld
+-- Adding linker script /Users/cmsedore/esp/esp-idf/components/esp_rom/esp32c6/ld/esp32c6.rom.newlib-normal.ld
+-- Adding linker script /Users/cmsedore/esp/esp-idf/components/esp_rom/esp32c6/ld/esp32c6.rom.heap.ld
+-- Adding linker script /Users/cmsedore/esp/esp-idf/components/soc/esp32c6/ld/esp32c6.peripherals.ld
+-- Components: app_trace app_update bootloader bootloader_support bt cmock console cxx driver efuse esp-tls esp_adc esp_app_format esp_bootloader_format esp_coex esp_common esp_driver_gpio esp_driver_gptimer esp_driver_mcpwm esp_driver_pcnt esp_driver_sdmmc esp_driver_spi esp_eth esp_event esp_gdbstub esp_hid esp_http_client esp_http_server esp_https_ota esp_https_server esp_hw_support esp_lcd esp_local_ctrl esp_mm esp_netif esp_netif_stack esp_partition esp_phy esp_pm esp_psram esp_ringbuf esp_rom esp_system esp_timer esp_wifi espcoredump espressif__esp_websocket_client esptool_py fatfs freertos hal heap http_parser idf_test ieee802154 jimtcl json log lwip main mbedtls mqtt newlib nvs_flash nvs_sec_provider openthread partition_table protobuf-c protocomm pthread riscv sdmmc soc spi_flash spiffs tcp_transport ulp unity usb vfs wear_levelling wifi_provisioning wpa_supplicant
+-- Component paths: /Users/cmsedore/esp/esp-idf/components/app_trace /Users/cmsedore/esp/esp-idf/components/app_update /Users/cmsedore/esp/esp-idf/components/bootloader /Users/cmsedore/esp/esp-idf/components/bootloader_support /Users/cmsedore/esp/esp-idf/components/bt /Users/cmsedore/esp/esp-idf/components/cmock /Users/cmsedore/esp/esp-idf/components/console /Users/cmsedore/esp/esp-idf/components/cxx /Users/cmsedore/esp/esp-idf/components/driver /Users/cmsedore/esp/esp-idf/components/efuse /Users/cmsedore/esp/esp-idf/components/esp-tls /Users/cmsedore/esp/esp-idf/components/esp_adc /Users/cmsedore/esp/esp-idf/components/esp_app_format /Users/cmsedore/esp/esp-idf/components/esp_bootloader_format /Users/cmsedore/esp/esp-idf/components/esp_coex /Users/cmsedore/esp/esp-idf/components/esp_common /Users/cmsedore/esp/esp-idf/components/esp_driver_gpio /Users/cmsedore/esp/esp-idf/components/esp_driver_gptimer /Users/cmsedore/esp/esp-idf/components/esp_driver_mcpwm /Users/cmsedore/esp/esp-idf/components/esp_driver_pcnt /Users/cmsedore/esp/esp-idf/components/esp_driver_sdmmc /Users/cmsedore/esp/esp-idf/components/esp_driver_spi /Users/cmsedore/esp/esp-idf/components/esp_eth /Users/cmsedore/esp/esp-idf/components/esp_event /Users/cmsedore/esp/esp-idf/components/esp_gdbstub /Users/cmsedore/esp/esp-idf/components/esp_hid /Users/cmsedore/esp/esp-idf/components/esp_http_client /Users/cmsedore/esp/esp-idf/components/esp_http_server /Users/cmsedore/esp/esp-idf/components/esp_https_ota /Users/cmsedore/esp/esp-idf/components/esp_https_server /Users/cmsedore/esp/esp-idf/components/esp_hw_support /Users/cmsedore/esp/esp-idf/components/esp_lcd /Users/cmsedore/esp/esp-idf/components/esp_local_ctrl /Users/cmsedore/esp/esp-idf/components/esp_mm /Users/cmsedore/esp/esp-idf/components/esp_netif /Users/cmsedore/esp/esp-idf/components/esp_netif_stack /Users/cmsedore/esp/esp-idf/components/esp_partition /Users/cmsedore/esp/esp-idf/components/esp_phy /Users/cmsedore/esp/esp-idf/components/esp_pm /Users/cmsedore/esp/esp-idf/components/esp_psram /Users/cmsedore/esp/esp-idf/components/esp_ringbuf /Users/cmsedore/esp/esp-idf/components/esp_rom /Users/cmsedore/esp/esp-idf/components/esp_system /Users/cmsedore/esp/esp-idf/components/esp_timer /Users/cmsedore/esp/esp-idf/components/esp_wifi /Users/cmsedore/esp/esp-idf/components/espcoredump /Users/cmsedore/esp/jimtcl/esp32/managed_components/espressif__esp_websocket_client /Users/cmsedore/esp/esp-idf/components/esptool_py /Users/cmsedore/esp/esp-idf/components/fatfs /Users/cmsedore/esp/esp-idf/components/freertos /Users/cmsedore/esp/esp-idf/components/hal /Users/cmsedore/esp/esp-idf/components/heap /Users/cmsedore/esp/esp-idf/components/http_parser /Users/cmsedore/esp/esp-idf/components/idf_test /Users/cmsedore/esp/esp-idf/components/ieee802154 /Users/cmsedore/esp/jimtcl/esp32/components/jimtcl /Users/cmsedore/esp/esp-idf/components/json /Users/cmsedore/esp/esp-idf/components/log /Users/cmsedore/esp/esp-idf/components/lwip /Users/cmsedore/esp/jimtcl/esp32/main /Users/cmsedore/esp/esp-idf/components/mbedtls /Users/cmsedore/esp/esp-idf/components/mqtt /Users/cmsedore/esp/esp-idf/components/newlib /Users/cmsedore/esp/esp-idf/components/nvs_flash /Users/cmsedore/esp/esp-idf/components/nvs_sec_provider /Users/cmsedore/esp/esp-idf/components/openthread /Users/cmsedore/esp/esp-idf/components/partition_table /Users/cmsedore/esp/esp-idf/components/protobuf-c /Users/cmsedore/esp/esp-idf/components/protocomm /Users/cmsedore/esp/esp-idf/components/pthread /Users/cmsedore/esp/esp-idf/components/riscv /Users/cmsedore/esp/esp-idf/components/sdmmc /Users/cmsedore/esp/esp-idf/components/soc /Users/cmsedore/esp/esp-idf/components/spi_flash /Users/cmsedore/esp/esp-idf/components/spiffs /Users/cmsedore/esp/esp-idf/components/tcp_transport /Users/cmsedore/esp/esp-idf/components/ulp /Users/cmsedore/esp/esp-idf/components/unity /Users/cmsedore/esp/esp-idf/components/usb /Users/cmsedore/esp/esp-idf/components/vfs /Users/cmsedore/esp/esp-idf/components/wear_levelling /Users/cmsedore/esp/esp-idf/components/wifi_provisioning /Users/cmsedore/esp/esp-idf/components/wpa_supplicant
+-- Configuring done (3.4s)
+-- Generating done (0.4s)
+-- Build files have been written to: /Users/cmsedore/esp/jimtcl/esp32/build
+[1/11] Performing build step for 'bootloader'
+[1/1] cd /Users/cmsedore/esp/jimtcl/esp32/build/bootloader/esp-idf/esptool_py && /Users/cmsedore/.espressif/python_env/idf5.3_py3.14_env/bin/python /Users/cmsedore/esp/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 bootloader 0x0 /Users/cmsedore/esp/jimtcl/esp32/build/bootloader/bootloader.bin
+Bootloader binary size 0x5430 bytes. 0x2bd0 bytes (34%) free.
+[2/11] No install step for 'bootloader'
+[3/11] Completed 'bootloader'
+[4/11] Building C object esp-idf/esp_app_format/CMakeFiles/__idf_esp_app_format.dir/esp_app_desc.c.obj
+[5/11] Linking C static library esp-idf/esp_app_format/libesp_app_format.a
+[6/11] Generating ld/sections.ld
+info: INFO: Symbol IDF_TARGET_LINUX defined in multiple locations (see below). Please check if this is a correct behavior or a random name match:
+    /Users/cmsedore/esp/esp-idf/Kconfig:128
+    /Users/cmsedore/esp/esp-idf/Kconfig:79
+[7/11] Linking CXX executable jimtcl-esp32.elf
+[8/11] Generating binary image from built executable
+esptool.py v4.11.0
+Creating esp32c6 image...
+MMU page size not specified, set to 64 KB
+Merged 4 ELF sections
+Successfully created esp32c6 image.
+Generated /Users/cmsedore/esp/jimtcl/esp32/build/jimtcl-esp32.bin
+[9/11] cd /Users/cmsedore/esp/jimtcl/esp32/build/esp-idf/esptool_py && /Users/cmsedore/.espressif/python_env/idf5.3_py3.14_env/bin/python /Users/cmsedore/esp/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 partition --type app /Users/cmsedore/esp/jimtcl/esp32/build/partition_table/partition-table.bin /Users/cmsedore/esp/jimtcl/esp32/build/jimtcl-esp32.bin
+jimtcl-esp32.bin binary size 0x168430 bytes. Smallest app partition is 0x200000 bytes. 0x97bd0 bytes (30%) free.
+[9/11] cd /Users/cmsedore/esp/esp-idf/components/esptool_py && /opt/homebrew/bin/cmake -D IDF_PATH=/Users/cmsedore/esp/esp-idf -D "SERIAL_TOOL=/Users/cmsedore/.espressif/python_env/idf5.3_py3.14_env/bin/python;;/Users/cmsedore/esp/esp-idf/components/esptool_py/esptool/esptool.py;--chip;esp32c6" -D "SERIAL_TOOL_ARGS=--before=default_reset;--after=hard_reset;write_flash;@flash_args" -D WORKING_DIRECTORY=/Users/cmsedore/esp/jimtcl/esp32/build -P /Users/cmsedore/esp/esp-idf/components/esptool_py/run_serial_tool.cmake
+esptool.py --chip esp32c6 -p /dev/cu.usbserial-2110 -b 460800 --before=default_reset --after=hard_reset write_flash --flash_mode dio --flash_freq 80m --flash_size 4MB 0x0 bootloader/bootloader.bin 0x10000 jimtcl-esp32.bin 0x8000 partition_table/partition-table.bin
+esptool.py v4.11.0
+Serial port /dev/cu.usbserial-2110
+Connecting....
+Chip is ESP32-C6 (QFN40) (revision v0.0)
+Features: Wi-Fi 6, BT 5 (LE), IEEE802.15.4, Single Core + LP Core, 160MHz, Unknown Embedded Flash
+Crystal is 40MHz
+MAC: 60:55:f9:00:00:f6:9b:bc
+BASE MAC: 60:55:f9:f6:9b:bc
+MAC_EXT: 00:00
+Uploading stub...
+Running stub...
+Stub running...
+Changing baud rate to 460800
+Changed.
+Configuring flash size...
+Flash will be erased from 0x00000000 to 0x00005fff...
+Flash will be erased from 0x00010000 to 0x00178fff...
+Flash will be erased from 0x00008000 to 0x00008fff...
+SHA digest in image updated
+Compressed 21552 bytes to 12990...
+Writing at 0x00000000... (100 %)
+Wrote 21552 bytes (12990 compressed) at 0x00000000 in 0.8 seconds (effective 225.1 kbit/s)...
+Hash of data verified.
+Compressed 1475632 bytes to 844015...
+Writing at 0x00010000... (1 %)
+Writing at 0x0001c4f9... (3 %)
+Writing at 0x0002ae19... (5 %)
+Writing at 0x0003676d... (7 %)
+Writing at 0x0003b2bb... (9 %)
+Writing at 0x0004038b... (11 %)
+Writing at 0x0004591c... (13 %)
+Writing at 0x0004c5ba... (15 %)
+Writing at 0x000514ab... (17 %)
+Writing at 0x0005aa70... (19 %)
+Writing at 0x000613d6... (21 %)
+Writing at 0x00068a84... (23 %)
+Writing at 0x0006f4a1... (25 %)
+Writing at 0x00076140... (26 %)
+Writing at 0x0007ce41... (28 %)
+Writing at 0x00084455... (30 %)
+Writing at 0x0008c50b... (32 %)
+Writing at 0x000940ba... (34 %)
+Writing at 0x0009af33... (36 %)
+Writing at 0x000a1ca1... (38 %)
+Writing at 0x000a9110... (40 %)
+Writing at 0x000b0905... (42 %)
+Writing at 0x000b85e2... (44 %)
+Writing at 0x000bf088... (46 %)
+Writing at 0x000c60ce... (48 %)
+Writing at 0x000ccfec... (50 %)
+Writing at 0x000d44cc... (51 %)
+Writing at 0x000db824... (53 %)
+Writing at 0x000e2f29... (55 %)
+Writing at 0x000e96a4... (57 %)
+Writing at 0x000efe9a... (59 %)
+Writing at 0x000f6cb0... (61 %)
+Writing at 0x000fd0c8... (63 %)
+Writing at 0x001035f9... (65 %)
+Writing at 0x00109c07... (67 %)
+Writing at 0x0010fb04... (69 %)
+Writing at 0x00115b32... (71 %)
+Writing at 0x0011b990... (73 %)
+Writing at 0x00121bc0... (75 %)
+Writing at 0x00127c1a... (76 %)
+Writing at 0x0012dc93... (78 %)
+Writing at 0x0013411a... (80 %)
+Writing at 0x0013aa00... (82 %)
+Writing at 0x001408d7... (84 %)
+Writing at 0x00146fb4... (86 %)
+Writing at 0x0014ce00... (88 %)
+Writing at 0x0015305b... (90 %)
+Writing at 0x0015960b... (92 %)
+Writing at 0x001604dc... (94 %)
+Writing at 0x00166f67... (96 %)
+Writing at 0x0016d868... (98 %)
+Writing at 0x0017342e... (100 %)
+Wrote 1475632 bytes (844015 compressed) at 0x00010000 in 23.5 seconds (effective 503.4 kbit/s)...
+Hash of data verified.
+Compressed 3072 bytes to 120...
+Writing at 0x00008000... (100 %)
+Wrote 3072 bytes (120 compressed) at 0x00008000 in 0.1 seconds (effective 221.5 kbit/s)...
+Hash of data verified.
+
+Leaving...
+Hard resetting via RTS pin...

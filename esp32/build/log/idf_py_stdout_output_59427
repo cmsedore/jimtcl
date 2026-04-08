@@ -1,0 +1,23 @@
+[1/11] Performing build step for 'bootloader'
+[1/1] cd /Users/cmsedore/esp/jimtcl/esp32/build/bootloader/esp-idf/esptool_py && /Users/cmsedore/.espressif/python_env/idf5.3_py3.14_env/bin/python /Users/cmsedore/esp/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 bootloader 0x0 /Users/cmsedore/esp/jimtcl/esp32/build/bootloader/bootloader.bin
+Bootloader binary size 0x5430 bytes. 0x2bd0 bytes (34%) free.
+[2/11] No install step for 'bootloader'
+[3/11] Completed 'bootloader'
+[4/11] Building C object esp-idf/main/CMakeFiles/__idf_main.dir/main.c.obj
+[5/11] Building C object esp-idf/jimtcl/CMakeFiles/__idf_jimtcl.dir/extensions/jim-ctlplane.c.obj
+[6/11] Linking C static library esp-idf/jimtcl/libjimtcl.a
+[7/11] Linking C static library esp-idf/main/libmain.a
+[8/11] Generating ld/sections.ld
+info: INFO: Symbol IDF_TARGET_LINUX defined in multiple locations (see below). Please check if this is a correct behavior or a random name match:
+    /Users/cmsedore/esp/esp-idf/Kconfig:79
+    /Users/cmsedore/esp/esp-idf/Kconfig:128
+[9/11] Linking CXX executable jimtcl-esp32.elf
+[10/11] Generating binary image from built executable
+esptool.py v4.11.0
+Creating esp32c6 image...
+MMU page size not specified, set to 64 KB
+Merged 4 ELF sections
+Successfully created esp32c6 image.
+Generated /Users/cmsedore/esp/jimtcl/esp32/build/jimtcl-esp32.bin
+[11/11] cd /Users/cmsedore/esp/jimtcl/esp32/build/esp-idf/esptool_py && /Users/cmsedore/.espressif/python_env/idf5.3_py3.14_env/bin/python /Users/cmsedore/esp/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 partition --type app /Users/cmsedore/esp/jimtcl/esp32/build/partition_table/partition-table.bin /Users/cmsedore/esp/jimtcl/esp32/build/jimtcl-esp32.bin
+jimtcl-esp32.bin binary size 0x166930 bytes. Smallest app partition is 0x200000 bytes. 0x996d0 bytes (30%) free.

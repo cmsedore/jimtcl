@@ -76,13 +76,16 @@ void app_main(void)
     }
     ESP_ERROR_CHECK(ret);
 
+#ifndef CONFIG_JIM_BOOT_MPACK
     /* Install UART driver and configure VFS for linenoise-based REPL.
-     * This gives us proper line editing, echo, and history. */
+     * This gives us proper line editing, echo, and history.
+     * Skip in mpack boot mode — the control plane manages its own UART. */
     setvbuf(stdin, NULL, _IONBF, 0);
     uart_driver_install(CONFIG_ESP_CONSOLE_UART_NUM, 4096, 0, 0, NULL, 0);
     esp_vfs_dev_uart_use_driver(CONFIG_ESP_CONSOLE_UART_NUM);
     esp_vfs_dev_uart_port_set_rx_line_endings(CONFIG_ESP_CONSOLE_UART_NUM, ESP_LINE_ENDINGS_CR);
     esp_vfs_dev_uart_port_set_tx_line_endings(CONFIG_ESP_CONSOLE_UART_NUM, ESP_LINE_ENDINGS_CRLF);
+#endif
 
     ESP_LOGI(TAG, "=================================");
     ESP_LOGI(TAG, "  Jim Tcl for ESP32");
@@ -107,9 +110,17 @@ void app_main(void)
     }
 
 #ifdef CONFIG_JIM_BOOT_MPACK
-    /* Boot into MessagePack control plane mode on console UART */
+    /* Boot into MessagePack control plane mode on console UART.
+     * Suppress all log output — binary COBS frames and text logs can't share UART. */
     ESP_LOGI(TAG, "Starting in MessagePack control plane mode");
-    Jim_Eval(interp, "ctlplane start serial 0 -tx -1 -rx -1 -baud 115200");
+    esp_log_level_set("*", ESP_LOG_NONE);
+    {
+        int ret = Jim_Eval(interp, "ctlplane start serial 0 -baud 115200");
+        if (ret != JIM_OK) {
+            ESP_LOGE(TAG, "Failed to start control plane: %s",
+                     Jim_String(Jim_GetResult(interp)));
+        }
+    }
     /* Block forever — control plane task handles everything */
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(10000));

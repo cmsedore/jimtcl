@@ -1,0 +1,114 @@
+# mpack.test -- MessagePack extension tests
+# Fully testable without hardware; exercises mpack encode and mpack decode.
+
+test suite "MsgPack Extension"
+test reset
+
+# --- Encode tests ---
+
+test run mpack-1.1 {encode flat dict} -body {
+    set bytes [mpack encode {name ESP32 count 42}]
+    expr {[llength $bytes] > 0}
+} -result {1}
+
+test run mpack-1.2 {encode integer values} -body {
+    set bytes [mpack encode {a 1 b 2 c 3}]
+    expr {[llength $bytes] > 0}
+} -result {1}
+
+test run mpack-1.3 {encode boolean true} -body {
+    set bytes [mpack encode {flag true}]
+    set d [mpack decode $bytes]
+    dict get $d flag
+} -result {1}
+
+test run mpack-1.4 {encode boolean false} -body {
+    set bytes [mpack encode {flag false}]
+    set d [mpack decode $bytes]
+    dict get $d flag
+} -result {0}
+
+test run mpack-1.5 {encode null value} -body {
+    set bytes [mpack encode {value null}]
+    set d [mpack decode $bytes]
+    dict get $d value
+} -result {}
+
+test run mpack-1.6 {encode nested dict} -body {
+    set bytes [mpack encode {outer {inner value}}]
+    expr {[llength $bytes] > 0}
+} -result {1}
+
+test run mpack-1.7 {encode array value (odd-element list)} -body {
+    set bytes [mpack encode {items {a b c}}]
+    set d [mpack decode $bytes]
+    llength [dict get $d items]
+} -result {3}
+
+test run mpack-1.8 {encode empty string value} -body {
+    set bytes [mpack encode {key {}}]
+    set d [mpack decode $bytes]
+    dict get $d key
+} -result {}
+
+# --- Round-trip tests ---
+
+test run mpack-2.1 {round-trip flat dict} -body {
+    set bytes [mpack encode {key hello value world}]
+    set d [mpack decode $bytes]
+    dict get $d key
+} -result {hello}
+
+test run mpack-2.2 {round-trip integer values} -body {
+    set bytes [mpack encode {count 42 offset -7}]
+    set d [mpack decode $bytes]
+    list [dict get $d count] [dict get $d offset]
+} -result {42 -7}
+
+test run mpack-2.3 {round-trip nested dict} -body {
+    set bytes [mpack encode {config {baud 115200 parity none}}]
+    set d [mpack decode $bytes]
+    dict get $d config baud
+} -result {115200}
+
+test run mpack-2.4 {round-trip multiple string values} -body {
+    set bytes [mpack encode {first Alice last Bob city Home}]
+    set d [mpack decode $bytes]
+    list [dict get $d first] [dict get $d last] [dict get $d city]
+} -result {Alice Bob Home}
+
+test run mpack-2.5 {round-trip mixed types} -body {
+    set bytes [mpack encode {name test count 99 active true}]
+    set d [mpack decode $bytes]
+    list [dict get $d name] [dict get $d count] [dict get $d active]
+} -result {test 99 1}
+
+test run mpack-2.6 {round-trip array value} -body {
+    set bytes [mpack encode {tags {red green blue}}]
+    set d [mpack decode $bytes]
+    dict get $d tags
+} -result {red green blue}
+
+# --- Decode tests ---
+
+test run mpack-3.1 {decode returns dict with correct keys} -body {
+    set bytes [mpack encode {alpha 1 beta 2}]
+    set d [mpack decode $bytes]
+    list [dict exists $d alpha] [dict exists $d beta]
+} -result {1 1}
+
+# --- Error cases ---
+
+test run mpack-4.1 {decode empty byte list} -body {
+    mpack decode {}
+} -returnCodes error -match glob -result {empty byte list*}
+
+test run mpack-4.2 {decode truncated map} -body {
+    mpack decode {134 161 97}
+} -returnCodes error -match glob -result {*error*}
+
+test run mpack-4.3 {encode odd-element top-level list fails} -body {
+    mpack encode {a b c}
+} -returnCodes error -match glob -result {*not a valid dict*}
+
+test report
