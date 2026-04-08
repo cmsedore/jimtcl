@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S python3 -u
 """
 ESP32 Jim Tcl Test Runner
 
@@ -15,12 +15,16 @@ Exit code: 0 if all tests pass, 1 if any fail.
 """
 
 import argparse
+import functools
 import glob
 import os
 import re
 import serial
 import sys
 import time
+
+# Force unbuffered output for real-time streaming
+print = functools.partial(print, flush=True)
 
 
 class Colors:
@@ -54,14 +58,40 @@ class ESP32TestRunner:
         self.suite_results = []
 
     def connect(self):
-        """Open serial connection and wait for the jim> prompt."""
+        """Open serial connection, reset the device, and wait for jim> prompt."""
         self.ser = serial.Serial(self.port, self.baud, timeout=1)
-        time.sleep(0.5)
-        # Drain any boot messages
-        self.ser.reset_input_buffer()
-        # Send an empty line to get a prompt
-        self._send_line("")
-        self._wait_for_prompt(timeout=5)
+
+        # Reset the ESP32 via RTS toggle
+        print(colorize(f"Connecting to {self.port}...", Colors.CYAN))
+        self.ser.dtr = False
+        self.ser.rts = True
+        time.sleep(0.1)
+        self.ser.rts = False
+
+        # Wait for boot to complete and jim> prompt to appear (up to 15s)
+        print("Waiting for ESP32 boot...", end=" ")
+        deadline = time.time() + 15
+        buf = ""
+        while time.time() < deadline:
+            if self.ser.in_waiting:
+                chunk = self.ser.read(self.ser.in_waiting).decode('utf-8', errors='replace')
+                buf += chunk
+                if 'jim>' in buf:
+                    break
+            else:
+                time.sleep(0.1)
+
+        if 'jim>' not in buf:
+            print(colorize("TIMEOUT - no jim> prompt detected", Colors.RED))
+            print("Last output:", buf[-200:] if len(buf) > 200 else buf)
+            sys.exit(2)
+
+        # Drain any remaining output
+        time.sleep(0.3)
+        if self.ser.in_waiting:
+            self.ser.read(self.ser.in_waiting)
+
+        print(colorize("OK", Colors.GREEN))
         print(colorize(f"Connected to {self.port} at {self.baud} baud", Colors.CYAN))
 
     def disconnect(self):
@@ -98,23 +128,83 @@ class ESP32TestRunner:
         """Wait for the jim> prompt to appear."""
         self._read_until_prompt(timeout=timeout)
 
+    def _coalesce_commands(self, script):
+        """Group script lines into complete Tcl commands by tracking brace depth.
+
+        Returns a list of complete command strings, each safe to send as one unit.
+        """
+        commands = []
+        current = ""
+        depth = 0
+
+        for line in script.strip().split('\n'):
+            stripped = line.strip()
+
+            # Skip empty lines and comments outside of commands
+            if not stripped and depth == 0:
+                continue
+            if stripped.startswith('#') and depth == 0:
+                commands.append(stripped)
+                continue
+
+            # Track brace depth (naive but sufficient for test scripts)
+            for ch in stripped:
+                if ch == '{':
+                    depth += 1
+                elif ch == '}':
+                    depth -= 1
+
+            if current:
+                # Use semicolons inside braces to keep bodies as valid Tcl
+                current += "; " + stripped if depth > 0 else " " + stripped
+            else:
+                current = stripped
+
+            if depth <= 0:
+                depth = 0
+                commands.append(current)
+                current = ""
+
+        if current:
+            commands.append(current)
+
+        return commands
+
     def _send_script(self, script):
-        """Send a multi-line script and collect all output."""
-        lines = script.strip().split('\n')
+        """Send a multi-line script and collect all output.
+
+        Coalesces multi-line Tcl commands (brace-balanced) into single lines
+        before sending, so the REPL receives complete commands.
+        """
+        commands = self._coalesce_commands(script)
         all_output = ""
 
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-            self._send_line(line)
-            # Wait a bit longer for lines that might take time
-            if any(kw in line for kw in ['http ', 'mqtt ', 'wifi ', 'esp32 sleep',
-                                          'task create', 'task eval']):
-                output = self._read_until_prompt(timeout=self.timeout)
+        for cmd in commands:
+            # Determine timeout
+            if any(kw in cmd for kw in ['http ', 'mqtt ', 'wifi ', 'esp32 sleep',
+                                         'task create', 'task eval', 'ota ']):
+                line_timeout = self.timeout
             else:
-                output = self._read_until_prompt(timeout=5)
-            all_output += output
+                line_timeout = 10
+
+            self._send_line(cmd)
+
+            # Read until jim> prompt (not > continuation)
+            buf = ""
+            deadline = time.time() + line_timeout
+            while time.time() < deadline:
+                if self.ser.in_waiting:
+                    chunk = self.ser.read(self.ser.in_waiting).decode('utf-8', errors='replace')
+                    buf += chunk
+                    if self.verbose:
+                        sys.stdout.write(chunk)
+                        sys.stdout.flush()
+                    if re.search(r'jim> \s*$', buf):
+                        break
+                else:
+                    time.sleep(0.02)
+
+            all_output += buf
 
         return all_output
 
@@ -246,7 +336,7 @@ def main():
     parser.add_argument("--test-dir", default=None,
                         help="Directory containing .test files")
 
-    args = parser.parse_args()
+    args = parser.parse_intermixed_args()
 
     # Determine test directory
     test_dir = args.test_dir or os.path.dirname(os.path.abspath(__file__))
