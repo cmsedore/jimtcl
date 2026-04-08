@@ -87,6 +87,12 @@ int Jim_InitStaticExtensions(Jim_Interp *interp)
 #ifdef CONFIG_JIM_EXT_TEST
     Jim_testInit(interp);
 #endif
+#ifdef CONFIG_JIM_EXT_TCP
+    Jim_tcpInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_ESPNOW
+    Jim_espnowInit(interp);
+#endif
 #ifdef CONFIG_JIM_EXT_MPACK
     Jim_mpackInit(interp);
 #endif

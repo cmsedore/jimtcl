@@ -145,6 +145,17 @@ if(CONFIG_JIM_EXT_TEST)
         "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-test.c")
 endif()
 
+if(CONFIG_JIM_EXT_TCP)
+    list(APPEND JIMTCL_ESP32_SRCS
+        "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-tcp.c")
+endif()
+
+if(CONFIG_JIM_EXT_ESPNOW)
+    list(APPEND JIMTCL_ESP32_SRCS
+        "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-espnow.c")
+    list(APPEND JIMTCL_REQUIRES esp_wifi)
+endif()
+
 if(CONFIG_JIM_EXT_MPACK)
     list(APPEND JIMTCL_ESP32_SRCS
         "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-mpack.c"

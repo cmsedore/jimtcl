@@ -109,6 +109,23 @@ menu "Jim Tcl Extensions"
             REPL. Provides test run, constraint, report, reset, and
             suite subcommands.
 
+    config JIM_EXT_TCP
+        bool "Enable TCP socket extension"
+        default y
+        help
+            Adds the [tcp] command for TCP client/server communication
+            using lwIP BSD sockets. Supports raw and mpack modes with
+            COBS framing, and async listener callbacks.
+
+    config JIM_EXT_ESPNOW
+        bool "Enable ESP-NOW extension"
+        default n
+        help
+            Adds the [espnow] command for ESP-NOW peer-to-peer
+            connectionless communication. Requires WiFi to be
+            initialized (but not connected). Supports raw and
+            mpack payload encoding. Max 250 bytes per frame.
+
     config JIM_EXT_MPACK
         bool "Enable MessagePack extension"
         default y
