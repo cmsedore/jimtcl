@@ -28,3 +28,7 @@ build-jim-ext
 *.gcov
 coverage*.html
 jimtcl.pc
+esp32/build/
+esp32/managed_components/
+esp32/sdkconfig
+esp32/dependencies.lock
