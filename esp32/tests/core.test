@@ -184,13 +184,13 @@ test run core-8.3 {try with on error} -body {
 
 # --- Arrow syntax (dotsugar) ---
 
+dotsugar 1
 test run core-9.1 {dotsugar enable and access} -body {
     set config [dict create wifi [dict create ssid MyNet password secret]]
-    dotsugar 1
     set result $config->wifi->ssid
-    dotsugar 0
     set result
 } -result {MyNet}
+dotsugar 0
 
 test run core-9.2 {dotsugar query state} -body {
     dotsugar 0

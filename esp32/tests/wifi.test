@@ -34,7 +34,6 @@ test run wifi-2.1 {wifi status returns a valid state} -body {
 # --- Error cases (always run) ---
 
 test run wifi-3.1 {disconnect before connect returns error} -body {
-    # After init, disconnect should work but we may not be connected
     wifi disconnect
 } -match glob -result {*}
 
@@ -61,7 +60,6 @@ test run wifi-4.3 {wifi status after connect} -body {
 
 test run wifi-4.4 {wifi ip returns valid IP} -body {
     set ip [wifi ip]
-    # Basic check: contains dots
     expr {[string match "*.*.*.*" $ip]}
 } -result {1} -constraints wifi_available
 

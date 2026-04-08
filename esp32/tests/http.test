@@ -55,9 +55,7 @@ test run http-2.4 {GET with custom header} -body {
 test run http-2.5 {GET with timeout to unreachable host} -body {
     test constraint wifi
     if {![test constraint wifi]} { return 1 }
-    # Use a non-routable IP to trigger timeout
     catch {http get http://192.0.2.1/test -timeout 2000} msg
-    # Should get a connect error
     set msg_has_error [string match "*failed*" $msg]
     expr {$msg_has_error || 1}
 } -result {1}

@@ -62,7 +62,6 @@ test run mqtt-3.4 {publish to test topic} -body {
 
 test run mqtt-3.5 {receive published message} -body {
     set msg [mqtt receive 10000]
-    # msg is a dict-like list: topic <t> data <d> qos <q>
     set topic [lindex $msg 1]
     set data [lindex $msg 3]
     list $topic $data

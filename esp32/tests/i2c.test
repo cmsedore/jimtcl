@@ -58,7 +58,6 @@ test run i2c-3.1 {detect returns a list} -body {
 
 test run i2c-4.1 {write to device} -body {
     i2c init 0 -sda 6 -scl 7
-    # Write register 0x00 to first detected device
     set addrs [i2c detect 0]
     if {[llength $addrs] == 0} {
         error "no I2C device found"

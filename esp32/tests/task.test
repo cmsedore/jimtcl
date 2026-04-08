@@ -72,7 +72,6 @@ test run task-4.1 {task send does not block} -body {
     esp32 sleep 50
     task send $h {set x 1}
     task delete $h
-    # If we get here without hanging, send is async
     set ok 1
 } -result {1}
 

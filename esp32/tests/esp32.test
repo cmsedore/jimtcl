@@ -82,9 +82,7 @@ test run esp32-4.3 {dotsugar disable} -body {
 # --- paste mode ---
 
 test run esp32-5.1 {paste mode toggle} -body {
-    # paste with no args toggles; returns "paste" or "smart"
     set r [paste 1]
-    # Should be one of the two modes
     expr {$r eq "paste" || $r eq "smart"}
 } -result {1}
 
@@ -96,7 +94,6 @@ test run esp32-5.2 {paste mode set explicit} -body {
 # --- puts ---
 
 test run esp32-6.1 {puts basic string} -body {
-    # puts should not error
     puts "test output"
     set ok 1
 } -result {1}

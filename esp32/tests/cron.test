@@ -62,7 +62,6 @@ test run cron-2.3 {list entry has last_fired_ms_ago} -body {
 test run cron-3.1 {remove by name} -body {
     set id [cron add 500 -callback {on_tick cronrecv} -name removeme]
     cron remove removeme
-    # Verify it's gone
     set found 0
     foreach e [cron list] {
         if {[dict get $e name] eq "removeme"} { set found 1 }

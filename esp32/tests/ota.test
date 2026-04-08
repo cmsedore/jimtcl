@@ -13,7 +13,6 @@ test constraint wifi_available 0
 
 test run ota-1.1 {ota status returns partition info} -body {
     set info [ota status]
-    # Should be a dict-like list with partition, version, etc.
     expr {[llength $info] >= 4}
 } -result {1}
 

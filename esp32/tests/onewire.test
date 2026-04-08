@@ -53,7 +53,6 @@ test run ow-3.2 {read temperature from DS18B20} -body {
     set roms [onewire search 4]
     set rom [lindex $roms 0]
     set temp [onewire read_temp 4 $rom]
-    # Temperature should be a reasonable number (-40 to 125 C)
     expr {[string is double -strict $temp] && $temp > -40 && $temp < 125}
 } -result {1} -constraints onewire_hw
 
