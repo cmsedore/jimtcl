@@ -2,9 +2,9 @@
  *
  * Provides Tcl commands for ESP-NOW peer-to-peer communication:
  *
- *   espnow init
+ *   espnow init ?-pmk <16-byte-key>?
  *   espnow deinit
- *   espnow peer add <mac_addr> ?-channel ch? ?-encrypt 0|1?
+ *   espnow peer add <mac_addr> ?-channel ch? ?-encrypt 0|1? ?-key <16-byte-key>?
  *   espnow peer remove <mac_addr>
  *   espnow peer list
  *   espnow send <mac_addr> <data> ?-mpack?
@@ -197,7 +197,18 @@ static void espnow_listener_fn(void *param)
 
 static int espnow_cmd_init(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 {
-    (void)argc; (void)argv;
+    const char *pmk = NULL;
+
+    /* Parse options */
+    for (int i = 0; i < argc; i++) {
+        const char *opt = Jim_String(argv[i]);
+        if (strcmp(opt, "-pmk") == 0 && i + 1 < argc) {
+            pmk = Jim_String(argv[++i]);
+        } else {
+            Jim_SetResultFormatted(interp, "unknown option \"%s\"", opt);
+            return JIM_ERR;
+        }
+    }
 
     if (espnow_state.initialized) {
         Jim_SetResultString(interp, "ESP-NOW already initialized", -1);
@@ -235,6 +246,27 @@ static int espnow_cmd_init(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
         espnow_state.rx_queue = NULL;
         Jim_SetResultFormatted(interp, "register recv cb failed: %s", esp_err_to_name(err));
         return JIM_ERR;
+    }
+
+    /* Set Primary Master Key if provided (must be exactly 16 bytes) */
+    if (pmk) {
+        int pmk_len = strlen(pmk);
+        if (pmk_len != 16) {
+            esp_now_deinit();
+            vQueueDelete(espnow_state.rx_queue);
+            espnow_state.rx_queue = NULL;
+            Jim_SetResultString(interp, "PMK must be exactly 16 bytes", -1);
+            return JIM_ERR;
+        }
+        err = esp_now_set_pmk((const uint8_t *)pmk);
+        if (err != ESP_OK) {
+            esp_now_deinit();
+            vQueueDelete(espnow_state.rx_queue);
+            espnow_state.rx_queue = NULL;
+            Jim_SetResultFormatted(interp, "esp_now_set_pmk failed: %s", esp_err_to_name(err));
+            return JIM_ERR;
+        }
+        ESP_LOGI(TAG, "ESP-NOW PMK set");
     }
 
     espnow_state.initialized = 1;
@@ -323,7 +355,7 @@ static int espnow_cmd_peer(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
     if (strcmp(subcmd, "add") == 0) {
         if (argc < 2) {
             Jim_SetResultString(interp,
-                "wrong # args: should be \"espnow peer add mac ?-channel ch? ?-encrypt 0|1?\"", -1);
+                "wrong # args: should be \"espnow peer add mac ?-channel ch? ?-encrypt 0|1? ?-key <16-byte-key>?\"", -1);
             return JIM_ERR;
         }
 
@@ -348,6 +380,14 @@ static int espnow_cmd_peer(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
                 long enc;
                 if (Jim_GetLong(interp, argv[++i], &enc) != JIM_OK) return JIM_ERR;
                 peer_info.encrypt = enc ? true : false;
+            } else if (strcmp(opt, "-key") == 0 && i + 1 < argc) {
+                const char *lmk = Jim_String(argv[++i]);
+                if (strlen(lmk) != 16) {
+                    Jim_SetResultString(interp, "LMK (-key) must be exactly 16 bytes", -1);
+                    return JIM_ERR;
+                }
+                memcpy(peer_info.lmk, lmk, 16);
+                peer_info.encrypt = true;  /* Auto-enable encryption when key is set */
             } else {
                 Jim_SetResultFormatted(interp, "unknown option \"%s\"", opt);
                 return JIM_ERR;
@@ -689,10 +729,10 @@ static int espnow_cmd_status(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 
 static const jim_subcmd_type espnow_command_table[] = {
     {   "init",
-        "",
+        "?-pmk key?",
         espnow_cmd_init,
         0,
-        0,
+        -1,
         /* Description: Initialize ESP-NOW */
     },
     {   "deinit",
