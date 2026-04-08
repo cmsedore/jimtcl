@@ -150,6 +150,12 @@ if(CONFIG_JIM_EXT_TCP)
         "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-tcp.c")
 endif()
 
+if(CONFIG_JIM_EXT_BLE)
+    list(APPEND JIMTCL_ESP32_SRCS
+        "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-ble.c")
+    list(APPEND JIMTCL_REQUIRES bt)
+endif()
+
 if(CONFIG_JIM_EXT_ESPNOW)
     list(APPEND JIMTCL_ESP32_SRCS
         "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-espnow.c")

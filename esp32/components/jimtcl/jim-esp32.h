@@ -98,6 +98,9 @@ int Jim_testInit(Jim_Interp *interp);
 #ifdef CONFIG_JIM_EXT_TCP
 int Jim_tcpInit(Jim_Interp *interp);
 #endif
+#ifdef CONFIG_JIM_EXT_BLE
+int Jim_bleInit(Jim_Interp *interp);
+#endif
 #ifdef CONFIG_JIM_EXT_ESPNOW
 int Jim_espnowInit(Jim_Interp *interp);
 #endif

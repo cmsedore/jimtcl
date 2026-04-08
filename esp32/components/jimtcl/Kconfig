@@ -117,6 +117,17 @@ menu "Jim Tcl Extensions"
             using lwIP BSD sockets. Supports raw and mpack modes with
             COBS framing, and async listener callbacks.
 
+    config JIM_EXT_BLE
+        bool "Enable BLE (NimBLE) extension"
+        default n
+        depends on BT_ENABLED && BT_NIMBLE_ENABLED
+        help
+            Adds the [ble] command for Bluetooth Low Energy communication
+            using the NimBLE stack. Supports peripheral (GATT server with
+            advertising) and central (scan, connect, discover, read/write)
+            roles. Requires Bluetooth and NimBLE to be enabled in menuconfig.
+            Uses significant memory -- enable only when needed.
+
     config JIM_EXT_ESPNOW
         bool "Enable ESP-NOW extension"
         default n
