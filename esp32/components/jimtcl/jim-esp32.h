@@ -104,11 +104,29 @@ int Jim_bleInit(Jim_Interp *interp);
 #ifdef CONFIG_JIM_EXT_ESPNOW
 int Jim_espnowInit(Jim_Interp *interp);
 #endif
+#ifdef CONFIG_JIM_EXT_MDNS
+int Jim_mdnsInit(Jim_Interp *interp);
+#endif
+#ifdef CONFIG_JIM_EXT_SNTP
+int Jim_sntpInit(Jim_Interp *interp);
+#endif
+#ifdef CONFIG_JIM_EXT_MODBUS
+int Jim_modbusInit(Jim_Interp *interp);
+#endif
 #ifdef CONFIG_JIM_EXT_MPACK
 int Jim_mpackInit(Jim_Interp *interp);
 #endif
 #ifdef CONFIG_JIM_EXT_CTLPLANE
 int Jim_ctlplaneInit(Jim_Interp *interp);
+#endif
+#ifdef CONFIG_JIM_EXT_RMT
+int Jim_rmtInit(Jim_Interp *interp);
+#endif
+#ifdef CONFIG_JIM_EXT_PCNT
+int Jim_pcntInit(Jim_Interp *interp);
+#endif
+#if defined(CONFIG_JIM_EXT_MCPWM) && defined(SOC_MCPWM_SUPPORTED)
+int Jim_mcpwmInit(Jim_Interp *interp);
 #endif
 
 #ifdef __cplusplus

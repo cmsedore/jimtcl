@@ -137,6 +137,31 @@ menu "Jim Tcl Extensions"
             initialized (but not connected). Supports raw and
             mpack payload encoding. Max 250 bytes per frame.
 
+    config JIM_EXT_MDNS
+        bool "Enable mDNS extension"
+        default y
+        help
+            Adds the [mdns] command for mDNS zero-config networking
+            and service discovery. Supports service registration,
+            service query, and hostname resolution.
+
+    config JIM_EXT_SNTP
+        bool "Enable SNTP time sync extension"
+        default y
+        help
+            Adds the [sntp] command for network time synchronization
+            via SNTP. Supports server configuration, timezone setting,
+            and time formatting.
+
+    config JIM_EXT_MODBUS
+        bool "Enable Modbus RTU master extension"
+        default n
+        help
+            Adds the [modbus] command for Modbus RTU master over UART.
+            Supports reading/writing holding registers, input registers,
+            and coils. Uses raw frame building with CRC16 -- no external
+            Modbus library needed. Specialized industrial use case.
+
     config JIM_EXT_MPACK
         bool "Enable MessagePack extension"
         default y
@@ -153,6 +178,32 @@ menu "Jim Tcl Extensions"
             Adds the [ctlplane] command for a binary management protocol
             over serial or WebSocket. Supports VM introspection, command
             dispatch, auth, and variable loading via MessagePack+COBS.
+
+    config JIM_EXT_RMT
+        bool "Enable RMT (Remote Control Transceiver) extension"
+        default y
+        help
+            Adds the [rmt] command for the RMT peripheral. Supports
+            raw TX/RX symbol transmission for IR protocols, plus a
+            dedicated WS2812/NeoPixel addressable LED strip driver.
+
+    config JIM_EXT_PCNT
+        bool "Enable PCNT (Pulse Counter) extension"
+        default y
+        help
+            Adds the [pcnt] command for hardware pulse counting.
+            Useful for rotary encoders, flow meters, and frequency
+            measurement with configurable edge detection and
+            threshold watch callbacks.
+
+    config JIM_EXT_MCPWM
+        bool "Enable MCPWM (Motor Control PWM) extension"
+        default n
+        help
+            Adds the [mcpwm] command for motor control PWM. Supports
+            DC motor H-bridge control with dual outputs and servo
+            motor angle control. Only available on chips with MCPWM
+            hardware (SOC_MCPWM_SUPPORTED).
 
     choice JIM_BOOT_MODE
         prompt "Boot mode"

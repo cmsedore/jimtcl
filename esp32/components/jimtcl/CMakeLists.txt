@@ -162,6 +162,21 @@ if(CONFIG_JIM_EXT_ESPNOW)
     list(APPEND JIMTCL_REQUIRES esp_wifi)
 endif()
 
+if(CONFIG_JIM_EXT_MDNS)
+    list(APPEND JIMTCL_ESP32_SRCS
+        "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-mdns.c")
+endif()
+
+if(CONFIG_JIM_EXT_SNTP)
+    list(APPEND JIMTCL_ESP32_SRCS
+        "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-sntp.c")
+endif()
+
+if(CONFIG_JIM_EXT_MODBUS)
+    list(APPEND JIMTCL_ESP32_SRCS
+        "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-modbus.c")
+endif()
+
 if(CONFIG_JIM_EXT_MPACK)
     list(APPEND JIMTCL_ESP32_SRCS
         "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-mpack.c"
@@ -172,6 +187,21 @@ endif()
 if(CONFIG_JIM_EXT_CTLPLANE)
     list(APPEND JIMTCL_ESP32_SRCS
         "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-ctlplane.c")
+endif()
+
+if(CONFIG_JIM_EXT_RMT)
+    list(APPEND JIMTCL_ESP32_SRCS
+        "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-rmt.c")
+endif()
+
+if(CONFIG_JIM_EXT_PCNT)
+    list(APPEND JIMTCL_ESP32_SRCS
+        "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-pcnt.c")
+endif()
+
+if(CONFIG_JIM_EXT_MCPWM)
+    list(APPEND JIMTCL_ESP32_SRCS
+        "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-mcpwm.c")
 endif()
 
 idf_component_register(

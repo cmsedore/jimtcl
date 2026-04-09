@@ -96,11 +96,29 @@ int Jim_InitStaticExtensions(Jim_Interp *interp)
 #ifdef CONFIG_JIM_EXT_ESPNOW
     Jim_espnowInit(interp);
 #endif
+#ifdef CONFIG_JIM_EXT_MDNS
+    Jim_mdnsInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_SNTP
+    Jim_sntpInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_MODBUS
+    Jim_modbusInit(interp);
+#endif
 #ifdef CONFIG_JIM_EXT_MPACK
     Jim_mpackInit(interp);
 #endif
 #ifdef CONFIG_JIM_EXT_CTLPLANE
     Jim_ctlplaneInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_RMT
+    Jim_rmtInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_PCNT
+    Jim_pcntInit(interp);
+#endif
+#if defined(CONFIG_JIM_EXT_MCPWM) && defined(SOC_MCPWM_SUPPORTED)
+    Jim_mcpwmInit(interp);
 #endif
 
     return JIM_OK;
