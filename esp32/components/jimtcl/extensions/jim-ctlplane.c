@@ -24,8 +24,10 @@
 #include "esp_system.h"
 #include "esp_chip_info.h"
 #include "esp_timer.h"
+#ifdef CONFIG_ESP_WIFI_ENABLED
 #include "esp_wifi.h"
 #include "esp_netif.h"
+#endif
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -590,6 +592,7 @@ static void handle_sys_wifi(ctlplane_state_t *state, mpack_node_t root,
 {
     (void)root;
 
+#ifdef CONFIG_ESP_WIFI_ENABLED
     wifi_ap_record_t ap_info;
     esp_err_t err = esp_wifi_sta_get_ap_info(&ap_info);
     if (err != ESP_OK) {
@@ -624,6 +627,14 @@ static void handle_sys_wifi(ctlplane_state_t *state, mpack_node_t root,
     mpack_write_cstr(writer, "ip");
     mpack_write_cstr(writer, ip_str);
     mpack_finish_map(writer);
+#else
+    mpack_start_map(writer, 2);
+    mpack_write_cstr(writer, "status");
+    mpack_write_cstr(writer, "ok");
+    mpack_write_cstr(writer, "wifi");
+    mpack_write_cstr(writer, "not available on this chip");
+    mpack_finish_map(writer);
+#endif
 }
 
 static void handle_sys_uptime(ctlplane_state_t *state, mpack_node_t root,

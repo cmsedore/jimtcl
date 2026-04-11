@@ -28,7 +28,9 @@ int Jim_InitStaticExtensions(Jim_Interp *interp)
 
     /* ESP32-specific extensions */
     Jim_gpioInit(interp);
+#ifdef CONFIG_ESP_WIFI_ENABLED
     Jim_wifiInit(interp);
+#endif
     Jim_i2cInit(interp);
     Jim_nvsInit(interp);
     Jim_esp_taskInit(interp);
@@ -39,13 +41,13 @@ int Jim_InitStaticExtensions(Jim_Interp *interp)
     Jim_watchdogInit(interp);
 
     /* Protocol extensions (Kconfig-gated) */
-#ifdef CONFIG_JIM_EXT_HTTP
+#if defined(CONFIG_JIM_EXT_HTTP) && defined(CONFIG_ESP_WIFI_ENABLED)
     Jim_httpInit(interp);
 #endif
-#ifdef CONFIG_JIM_EXT_MQTT
+#if defined(CONFIG_JIM_EXT_MQTT) && defined(CONFIG_ESP_WIFI_ENABLED)
     Jim_mqttInit(interp);
 #endif
-#ifdef CONFIG_JIM_EXT_WEBSOCKET
+#if defined(CONFIG_JIM_EXT_WEBSOCKET) && defined(CONFIG_ESP_WIFI_ENABLED)
     Jim_websocketInit(interp);
 #endif
 #ifdef CONFIG_JIM_EXT_JSON
@@ -69,7 +71,7 @@ int Jim_InitStaticExtensions(Jim_Interp *interp)
 #ifdef CONFIG_JIM_EXT_FS
     Jim_fsInit(interp);
 #endif
-#ifdef CONFIG_JIM_EXT_OTA
+#if defined(CONFIG_JIM_EXT_OTA) && defined(CONFIG_ESP_WIFI_ENABLED)
     Jim_otaInit(interp);
 #endif
 #ifdef CONFIG_JIM_EXT_SPI
@@ -81,25 +83,25 @@ int Jim_InitStaticExtensions(Jim_Interp *interp)
 #ifdef CONFIG_JIM_EXT_CRON
     Jim_cronInit(interp);
 #endif
-#ifdef CONFIG_JIM_EXT_SYSLOG
+#if defined(CONFIG_JIM_EXT_SYSLOG) && defined(CONFIG_ESP_WIFI_ENABLED)
     Jim_syslogInit(interp);
 #endif
 #ifdef CONFIG_JIM_EXT_TEST
     Jim_testInit(interp);
 #endif
-#ifdef CONFIG_JIM_EXT_TCP
+#if defined(CONFIG_JIM_EXT_TCP) && defined(CONFIG_ESP_WIFI_ENABLED)
     Jim_tcpInit(interp);
 #endif
 #ifdef CONFIG_JIM_EXT_BLE
     Jim_bleInit(interp);
 #endif
-#ifdef CONFIG_JIM_EXT_ESPNOW
+#if defined(CONFIG_JIM_EXT_ESPNOW) && defined(CONFIG_ESP_WIFI_ENABLED)
     Jim_espnowInit(interp);
 #endif
-#ifdef CONFIG_JIM_EXT_MDNS
+#if defined(CONFIG_JIM_EXT_MDNS) && defined(CONFIG_ESP_WIFI_ENABLED)
     Jim_mdnsInit(interp);
 #endif
-#ifdef CONFIG_JIM_EXT_SNTP
+#if defined(CONFIG_JIM_EXT_SNTP) && defined(CONFIG_ESP_WIFI_ENABLED)
     Jim_sntpInit(interp);
 #endif
 #ifdef CONFIG_JIM_EXT_MODBUS

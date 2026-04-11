@@ -27,7 +27,6 @@ set(JIMTCL_ESP32_SRCS
     "${CMAKE_CURRENT_LIST_DIR}/jim-esp32.c"
     "${CMAKE_CURRENT_LIST_DIR}/jim-esp32-loadext.c"
     "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-gpio.c"
-    "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-wifi.c"
     "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-i2c.c"
     "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-nvs.c"
     "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-esp-task.c"
@@ -35,9 +34,14 @@ set(JIMTCL_ESP32_SRCS
     "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-watchdog.c"
 )
 
+# WiFi is not available on all chips (e.g., ESP32-H2 is BLE+802.15.4 only)
+if(CONFIG_ESP_WIFI_ENABLED)
+    list(APPEND JIMTCL_ESP32_SRCS
+        "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-wifi.c")
+endif()
+
 set(JIMTCL_REQUIRES
     driver
-    esp_wifi
     esp_event
     nvs_flash
     esp_timer
@@ -45,13 +49,15 @@ set(JIMTCL_REQUIRES
     vfs
     spiffs
     console
-    esp_http_client
-    mqtt
     json
     esp_adc
-    esp_https_ota
     app_update
 )
+
+# WiFi/networking-dependent components (not available on e.g. ESP32-H2)
+if(CONFIG_ESP_WIFI_ENABLED)
+    list(APPEND JIMTCL_REQUIRES esp_wifi esp_http_client mqtt esp_https_ota)
+endif()
 
 # IEEE 802.15.4 is only available on ESP32-C6 and ESP32-H2
 if(IDF_TARGET STREQUAL "esp32c6" OR IDF_TARGET STREQUAL "esp32h2")
@@ -61,19 +67,19 @@ if(IDF_TARGET STREQUAL "esp32c6" OR IDF_TARGET STREQUAL "esp32h2")
 endif()
 
 # Kconfig-gated protocol extensions
-if(CONFIG_JIM_EXT_HTTP)
+if(CONFIG_JIM_EXT_HTTP AND CONFIG_ESP_WIFI_ENABLED)
     list(APPEND JIMTCL_ESP32_SRCS
         "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-http.c")
     list(APPEND JIMTCL_REQUIRES esp_http_client)
 endif()
 
-if(CONFIG_JIM_EXT_MQTT)
+if(CONFIG_JIM_EXT_MQTT AND CONFIG_ESP_WIFI_ENABLED)
     list(APPEND JIMTCL_ESP32_SRCS
         "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-mqtt.c")
     list(APPEND JIMTCL_REQUIRES mqtt)
 endif()
 
-if(CONFIG_JIM_EXT_WEBSOCKET)
+if(CONFIG_JIM_EXT_WEBSOCKET AND CONFIG_ESP_WIFI_ENABLED)
     list(APPEND JIMTCL_ESP32_SRCS
         "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-websocket.c")
 endif()
@@ -114,7 +120,7 @@ if(CONFIG_JIM_EXT_FS)
         "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-fs.c")
 endif()
 
-if(CONFIG_JIM_EXT_OTA)
+if(CONFIG_JIM_EXT_OTA AND CONFIG_ESP_WIFI_ENABLED)
     list(APPEND JIMTCL_ESP32_SRCS
         "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-ota.c")
     list(APPEND JIMTCL_REQUIRES esp_https_ota)
@@ -135,7 +141,7 @@ if(CONFIG_JIM_EXT_CRON)
         "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-cron.c")
 endif()
 
-if(CONFIG_JIM_EXT_SYSLOG)
+if(CONFIG_JIM_EXT_SYSLOG AND CONFIG_ESP_WIFI_ENABLED)
     list(APPEND JIMTCL_ESP32_SRCS
         "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-syslog.c")
 endif()
@@ -145,7 +151,7 @@ if(CONFIG_JIM_EXT_TEST)
         "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-test.c")
 endif()
 
-if(CONFIG_JIM_EXT_TCP)
+if(CONFIG_JIM_EXT_TCP AND CONFIG_ESP_WIFI_ENABLED)
     list(APPEND JIMTCL_ESP32_SRCS
         "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-tcp.c")
 endif()
@@ -156,18 +162,18 @@ if(CONFIG_JIM_EXT_BLE)
     list(APPEND JIMTCL_REQUIRES bt)
 endif()
 
-if(CONFIG_JIM_EXT_ESPNOW)
+if(CONFIG_JIM_EXT_ESPNOW AND CONFIG_ESP_WIFI_ENABLED)
     list(APPEND JIMTCL_ESP32_SRCS
         "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-espnow.c")
     list(APPEND JIMTCL_REQUIRES esp_wifi)
 endif()
 
-if(CONFIG_JIM_EXT_MDNS)
+if(CONFIG_JIM_EXT_MDNS AND CONFIG_ESP_WIFI_ENABLED)
     list(APPEND JIMTCL_ESP32_SRCS
         "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-mdns.c")
 endif()
 
-if(CONFIG_JIM_EXT_SNTP)
+if(CONFIG_JIM_EXT_SNTP AND CONFIG_ESP_WIFI_ENABLED)
     list(APPEND JIMTCL_ESP32_SRCS
         "${CMAKE_CURRENT_LIST_DIR}/extensions/jim-sntp.c")
 endif()
