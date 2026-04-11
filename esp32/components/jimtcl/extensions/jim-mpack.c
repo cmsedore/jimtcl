@@ -300,6 +300,302 @@ static int mpack_cmd_decode(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 }
 
 /* ---------------------------------------------------------------------------
+ * Format-string pack: mpack pack {format} ?args...?
+ *
+ * Format is a Tcl list of: key type key type ...
+ * where type is one of:
+ *   s = string, i = int32, I = uint32, q = int64, d = double,
+ *   ? = bool, b = uint8, B = binary,
+ *   m = map (arg is a Tcl dict, recursive heuristic encoding),
+ *   a = array (arg is a Tcl list, recursive heuristic encoding)
+ *
+ * Each key-type pair consumes one Tcl arg.
+ * If the format has just one element (a bare type with no key),
+ * it encodes a top-level value (not wrapped in a map).
+ * ---------------------------------------------------------------------------*/
+
+/* Encode one arg into writer according to type char */
+static int pack_one(Jim_Interp *interp, mpack_writer_t *writer,
+                    char type, Jim_Obj *arg)
+{
+    switch (type) {
+        case 's':
+            mpack_write_cstr(writer, Jim_String(arg));
+            break;
+        case 'i': {
+            long val;
+            if (Jim_GetLong(interp, arg, &val) != JIM_OK) return JIM_ERR;
+            mpack_write_i32(writer, (int32_t)val);
+            break;
+        }
+        case 'I': {
+            long val;
+            if (Jim_GetLong(interp, arg, &val) != JIM_OK) return JIM_ERR;
+            mpack_write_u32(writer, (uint32_t)val);
+            break;
+        }
+        case 'q': {
+            jim_wide val;
+            if (Jim_GetWide(interp, arg, &val) != JIM_OK) return JIM_ERR;
+            mpack_write_i64(writer, (int64_t)val);
+            break;
+        }
+        case 'd': {
+            double val;
+            if (Jim_GetDouble(interp, arg, &val) != JIM_OK) return JIM_ERR;
+            mpack_write_double(writer, val);
+            break;
+        }
+        case '?': {
+            long val;
+            if (Jim_GetLong(interp, arg, &val) != JIM_OK) return JIM_ERR;
+            mpack_write_bool(writer, val != 0);
+            break;
+        }
+        case 'b': {
+            long val;
+            if (Jim_GetLong(interp, arg, &val) != JIM_OK) return JIM_ERR;
+            mpack_write_u8(writer, (uint8_t)(val & 0xFF));
+            break;
+        }
+        case 'B': {
+            int len;
+            const char *data = Jim_GetString(arg, &len);
+            mpack_write_bin(writer, data, (uint32_t)len);
+            break;
+        }
+        case 'm':
+            /* Map: arg is a Tcl dict, encode recursively with heuristics */
+            jim_dict_to_mpack_writer(interp, arg, writer);
+            break;
+        case 'a': {
+            /* Array: arg is a Tcl list, encode each element with heuristics */
+            int listlen = Jim_ListLength(interp, arg);
+            mpack_start_array(writer, (uint32_t)listlen);
+            for (int j = 0; j < listlen; j++) {
+                Jim_Obj *elem = Jim_ListGetIndex(interp, arg, j);
+                jim_value_to_mpack(interp, elem, writer);
+            }
+            mpack_finish_array(writer);
+            break;
+        }
+        default:
+            Jim_SetResultFormatted(interp, "unknown pack type '%c'", type);
+            return JIM_ERR;
+    }
+    return JIM_OK;
+}
+
+static int mpack_cmd_pack(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
+{
+    if (argc < 1) {
+        Jim_SetResultString(interp, "wrong # args: should be \"mpack pack format ?args...?\"", -1);
+        return JIM_ERR;
+    }
+
+    /* Parse format: list of {key type key type ...} or bare {type} */
+    Jim_Obj *fmtObj = argv[0];
+    int fmtlen = Jim_ListLength(interp, fmtObj);
+
+    char *data = NULL;
+    size_t size = 0;
+    mpack_writer_t writer;
+    mpack_writer_init_growable(&writer, &data, &size);
+
+    int argidx = 1;  /* index into argv for values */
+
+    if (fmtlen == 1) {
+        /* Single bare type — encode one value, no map wrapper */
+        const char *typestr = Jim_String(Jim_ListGetIndex(interp, fmtObj, 0));
+        if (argidx >= argc) {
+            mpack_writer_destroy(&writer);
+            Jim_SetResultString(interp, "not enough arguments for format", -1);
+            return JIM_ERR;
+        }
+        if (pack_one(interp, &writer, typestr[0], argv[argidx]) != JIM_OK) {
+            mpack_writer_destroy(&writer);
+            return JIM_ERR;
+        }
+    } else {
+        /* Key-type pairs — build a map */
+        if (fmtlen % 2 != 0) {
+            mpack_writer_destroy(&writer);
+            Jim_SetResultString(interp, "format must have even number of elements (key type pairs)", -1);
+            return JIM_ERR;
+        }
+
+        int nfields = fmtlen / 2;
+        mpack_start_map(&writer, (uint32_t)nfields);
+
+        for (int i = 0; i < fmtlen; i += 2) {
+            const char *key = Jim_String(Jim_ListGetIndex(interp, fmtObj, i));
+            const char *typestr = Jim_String(Jim_ListGetIndex(interp, fmtObj, i + 1));
+            char type = typestr[0];
+
+            mpack_write_cstr(&writer, key);
+
+            if (argidx >= argc) {
+                mpack_writer_destroy(&writer);
+                Jim_SetResultFormatted(interp, "not enough arguments: need value for key '%s'", key);
+                return JIM_ERR;
+            }
+
+            if (pack_one(interp, &writer, type, argv[argidx]) != JIM_OK) {
+                mpack_writer_destroy(&writer);
+                return JIM_ERR;
+            }
+            argidx++;
+        }
+
+        mpack_finish_map(&writer);
+    }
+
+    mpack_error_t err = mpack_writer_destroy(&writer);
+    if (err != mpack_ok) {
+        Jim_SetResultString(interp, "mpack pack failed", -1);
+        if (data) MPACK_FREE(data);
+        return JIM_ERR;
+    }
+
+    /* Return as byte list */
+    Jim_Obj *list = Jim_NewListObj(interp, NULL, 0);
+    for (size_t i = 0; i < size; i++) {
+        Jim_ListAppendElement(interp, list, Jim_NewIntObj(interp, (uint8_t)data[i]));
+    }
+    MPACK_FREE(data);
+    Jim_SetResult(interp, list);
+    return JIM_OK;
+}
+
+/* ---------------------------------------------------------------------------
+ * Format-string unpack: mpack unpack <bytes> {format}
+ *
+ * Format is a Tcl list of: key type key type ...
+ * Returns a dict with the named fields.
+ * If format is a bare {type}, returns the decoded value directly.
+ * ---------------------------------------------------------------------------*/
+
+/* Extract one value from mpack node according to type */
+static Jim_Obj *unpack_one(Jim_Interp *interp, mpack_node_t node, char type)
+{
+    switch (type) {
+        case 's': {
+            const char *s = mpack_node_str(node);
+            size_t slen = mpack_node_strlen(node);
+            return Jim_NewStringObj(interp, s, (int)slen);
+        }
+        case 'i':
+            return Jim_NewIntObj(interp, (jim_wide)mpack_node_i32(node));
+        case 'I':
+            return Jim_NewIntObj(interp, (jim_wide)mpack_node_u32(node));
+        case 'q':
+            return Jim_NewIntObj(interp, (jim_wide)mpack_node_i64(node));
+        case 'd':
+            return Jim_NewDoubleObj(interp, mpack_node_double(node));
+        case '?':
+            return Jim_NewIntObj(interp, mpack_node_bool(node) ? 1 : 0);
+        case 'b':
+            return Jim_NewIntObj(interp, mpack_node_u8(node));
+        case 'B': {
+            const char *bin = mpack_node_bin_data(node);
+            size_t blen = mpack_node_bin_size(node);
+            return Jim_NewStringObj(interp, bin, (int)blen);
+        }
+        case 'm':
+        case 'a':
+            /* Recursive decode using existing heuristic */
+            return mpack_node_to_jim(interp, node);
+        default:
+            return Jim_NewStringObj(interp, "", 0);
+    }
+}
+
+static int mpack_cmd_unpack(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
+{
+    if (argc < 2) {
+        Jim_SetResultString(interp, "wrong # args: should be \"mpack unpack bytes format\"", -1);
+        return JIM_ERR;
+    }
+
+    /* Parse byte list to buffer */
+    int listlen = Jim_ListLength(interp, argv[0]);
+    if (listlen <= 0) {
+        Jim_SetResultString(interp, "empty byte list", -1);
+        return JIM_ERR;
+    }
+
+    uint8_t *buf = malloc(listlen);
+    if (!buf) {
+        Jim_SetResultString(interp, "out of memory", -1);
+        return JIM_ERR;
+    }
+
+    for (int i = 0; i < listlen; i++) {
+        Jim_Obj *elem = Jim_ListGetIndex(interp, argv[0], i);
+        jim_wide val;
+        if (Jim_GetWide(interp, elem, &val) != JIM_OK || val < 0 || val > 255) {
+            free(buf);
+            Jim_SetResultFormatted(interp, "invalid byte at index %d", i);
+            return JIM_ERR;
+        }
+        buf[i] = (uint8_t)val;
+    }
+
+    /* Parse mpack */
+    mpack_tree_t tree;
+    mpack_tree_init_data(&tree, (const char *)buf, listlen);
+    mpack_tree_parse(&tree);
+
+    if (mpack_tree_error(&tree) != mpack_ok) {
+        mpack_tree_destroy(&tree);
+        free(buf);
+        Jim_SetResultString(interp, "mpack parse error", -1);
+        return JIM_ERR;
+    }
+
+    mpack_node_t root = mpack_tree_root(&tree);
+
+    /* Parse format */
+    Jim_Obj *fmtObj = argv[1];
+    int fmtlen = Jim_ListLength(interp, fmtObj);
+
+    if (fmtlen == 1) {
+        /* Bare type — extract single value */
+        const char *typestr = Jim_String(Jim_ListGetIndex(interp, fmtObj, 0));
+        Jim_SetResult(interp, unpack_one(interp, root, typestr[0]));
+    } else if (fmtlen % 2 == 0) {
+        /* Key-type pairs — extract named fields from map */
+        Jim_Obj *result = Jim_NewListObj(interp, NULL, 0);
+
+        for (int i = 0; i < fmtlen; i += 2) {
+            const char *key = Jim_String(Jim_ListGetIndex(interp, fmtObj, i));
+            const char *typestr = Jim_String(Jim_ListGetIndex(interp, fmtObj, i + 1));
+
+            mpack_node_t val_node = mpack_node_map_cstr_optional(root, key);
+            Jim_ListAppendElement(interp, result, Jim_NewStringObj(interp, key, -1));
+
+            if (mpack_node_is_missing(val_node)) {
+                Jim_ListAppendElement(interp, result, Jim_NewStringObj(interp, "", 0));
+            } else {
+                Jim_ListAppendElement(interp, result,
+                    unpack_one(interp, val_node, typestr[0]));
+            }
+        }
+
+        Jim_SetResult(interp, result);
+    } else {
+        mpack_tree_destroy(&tree);
+        free(buf);
+        Jim_SetResultString(interp, "format must have even elements (key type pairs) or single type", -1);
+        return JIM_ERR;
+    }
+
+    mpack_tree_destroy(&tree);
+    free(buf);
+    return JIM_OK;
+}
+
+/* ---------------------------------------------------------------------------
  * Subcommand table and init
  * ---------------------------------------------------------------------------*/
 
@@ -315,6 +611,18 @@ static const jim_subcmd_type mpack_command_table[] = {
         mpack_cmd_decode,
         1,
         1,
+    },
+    {   "pack",
+        "format ?args...?",
+        mpack_cmd_pack,
+        1,
+        -1,
+    },
+    {   "unpack",
+        "bytes format",
+        mpack_cmd_unpack,
+        2,
+        2,
     },
     { NULL }
 };
