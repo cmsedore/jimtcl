@@ -1,0 +1,78 @@
+# mqtt.test -- MQTT extension tests
+#
+# Requires: mqtt_broker constraint if network + MQTT broker are available.
+# The wifi_available constraint must also be met for broker tests.
+
+test suite "MQTT Extension"
+test reset
+
+# Set to 1 if network is available and a public MQTT broker is reachable
+test constraint mqtt_broker 0
+
+# Public test broker URI (override as needed)
+if {![info exists mqtt_uri]} { set mqtt_uri "mqtt://test.mosquitto.org" }
+
+# --- Status when not connected ---
+
+test run mqtt-1.1 {status returns disconnected when no client} -body {
+    mqtt status
+} -result {disconnected}
+
+# --- Error cases (always run) ---
+
+test run mqtt-2.1 {publish without connection} -body {
+    mqtt publish "test/topic" "hello"
+} -returnCodes error -match glob -result {*not connected*}
+
+test run mqtt-2.2 {subscribe without connection} -body {
+    mqtt subscribe "test/topic"
+} -returnCodes error -match glob -result {*not connected*}
+
+test run mqtt-2.3 {receive without connection} -body {
+    mqtt receive 100
+} -returnCodes error -match glob -result {*not connected*}
+
+test run mqtt-2.4 {disconnect without connection} -body {
+    mqtt disconnect
+} -returnCodes error -match glob -result {*not connected*}
+
+test run mqtt-2.5 {unsubscribe without connection} -body {
+    mqtt unsubscribe "test/topic"
+} -returnCodes error -match glob -result {*not connected*}
+
+# --- Broker-dependent tests ---
+
+test run mqtt-3.1 {connect to public broker} -body {
+    mqtt connect $mqtt_uri
+} -result {connected} -constraints mqtt_broker
+
+test run mqtt-3.2 {status after connect} -body {
+    mqtt status
+} -result {connected} -constraints mqtt_broker
+
+test run mqtt-3.3 {subscribe to test topic} -body {
+    set id [mqtt subscribe "jimtcl/test/roundtrip" -qos 1]
+    expr {[string is integer -strict $id]}
+} -result {1} -constraints mqtt_broker
+
+test run mqtt-3.4 {publish to test topic} -body {
+    set id [mqtt publish "jimtcl/test/roundtrip" "hello from jimtcl" -qos 1]
+    expr {[string is integer -strict $id] && $id >= 0}
+} -result {1} -constraints mqtt_broker
+
+test run mqtt-3.5 {receive published message} -body {
+    set msg [mqtt receive 10000]
+    set topic [lindex $msg 1]
+    set data [lindex $msg 3]
+    list $topic $data
+} -result {jimtcl/test/roundtrip {hello from jimtcl}} -constraints mqtt_broker
+
+test run mqtt-3.6 {disconnect from broker} -body {
+    mqtt disconnect
+} -result {disconnected} -constraints mqtt_broker
+
+test run mqtt-3.7 {status after disconnect} -body {
+    mqtt status
+} -result {disconnected} -constraints mqtt_broker
+
+test report

@@ -1,0 +1,71 @@
+# syslog.test -- Syslog extension tests
+#
+# UDP syslog is fire-and-forget, so open/send/close work even without
+# a reachable server (packets are just dropped).
+
+test suite "Syslog Extension"
+test reset
+
+# Set to 1 if a syslog server is reachable (for verifying receipt)
+test constraint syslog_server 0
+
+# --- Open (UDP, does not require reachable host) ---
+
+test run syslog-1.1 {open syslog to localhost} -body {
+    syslog open 127.0.0.1
+} -result {}
+
+test run syslog-1.2 {open with explicit port} -body {
+    syslog open 127.0.0.1 -port 1514
+} -result {}
+
+# --- Send (fire and forget over UDP) ---
+
+test run syslog-2.1 {send a message} -body {
+    syslog open 127.0.0.1
+    syslog send "test message from jimtcl"
+} -result {}
+
+test run syslog-2.2 {send with facility and severity} -body {
+    syslog send "test with options" -facility 1 -severity 4
+} -result {}
+
+# --- Close ---
+
+test run syslog-3.1 {close syslog} -body {
+    syslog close
+} -result {}
+
+# --- Redirect toggle ---
+
+test run syslog-4.1 {redirect query returns 0 when off} -body {
+    syslog redirect
+} -result {0}
+
+test run syslog-4.2 {redirect enable requires open} -body {
+    syslog close
+    syslog redirect 1
+} -returnCodes error -match glob -result {*not open*}
+
+test run syslog-4.3 {redirect enable and disable} -body {
+    syslog open 127.0.0.1
+    syslog redirect 1
+    set on [syslog redirect]
+    syslog redirect 0
+    set off [syslog redirect]
+    syslog close
+    list $on $off
+} -result {1 0}
+
+# --- Error cases ---
+
+test run syslog-5.1 {send without open} -body {
+    syslog close
+    syslog send "should fail"
+} -returnCodes error -match glob -result {*not open*}
+
+test run syslog-5.2 {unknown option} -body {
+    syslog open 127.0.0.1 -badopt 123
+} -returnCodes error -match glob -result {*unknown option*}
+
+test report

@@ -1,0 +1,115 @@
+# nvs.test -- NVS (Non-Volatile Storage) extension tests
+#
+# NVS is available on all ESP32 devices with flash.
+
+test suite "NVS Extension"
+test reset
+
+# --- Open / close ---
+
+test run nvs-1.1 {open NVS namespace} -body {
+    set h [nvs open "test_ns"]
+    expr {[string is integer -strict $h]}
+} -result {1}
+
+test run nvs-1.2 {close NVS handle} -body {
+    set h [nvs open "test_ns"]
+    nvs close $h
+} -result {}
+
+# --- Write and read round-trip (string) ---
+
+test run nvs-2.1 {set and get string value} -body {
+    set h [nvs open "test_ns"]
+    nvs set $h "test_key" "test_value"
+    set val [nvs get $h "test_key"]
+    nvs close $h
+    set val
+} -result {test_value}
+
+test run nvs-2.2 {set and get integer value} -body {
+    set h [nvs open "test_ns"]
+    nvs set $h "int_key" 42 int
+    set val [nvs get $h "int_key" int]
+    nvs close $h
+    set val
+} -result {42}
+
+test run nvs-2.3 {overwrite existing key} -body {
+    set h [nvs open "test_ns"]
+    nvs set $h "test_key" "original"
+    nvs set $h "test_key" "updated"
+    set val [nvs get $h "test_key"]
+    nvs close $h
+    set val
+} -result {updated}
+
+# --- Read nonexistent key ---
+
+test run nvs-3.1 {get nonexistent key returns error} -body {
+    set h [nvs open "test_ns"]
+    set result [catch {nvs get $h "no_such_key_xyz"} msg]
+    nvs close $h
+    set result
+} -result {1}
+
+# --- Delete ---
+
+test run nvs-4.1 {delete a key} -body {
+    set h [nvs open "test_ns"]
+    nvs set $h "del_key" "to_delete"
+    nvs delete $h "del_key"
+    set result [catch {nvs get $h "del_key"} msg]
+    nvs close $h
+    set result
+} -result {1}
+
+test run nvs-4.2 {delete nonexistent key returns error} -body {
+    set h [nvs open "test_ns"]
+    nvs delete $h "no_such_key_xyz"
+} -returnCodes error -match glob -result {*nvs delete failed*}
+
+# --- Erase all ---
+
+test run nvs-5.1 {erase all keys in namespace} -body {
+    set h [nvs open "test_ns"]
+    nvs set $h "key1" "val1"
+    nvs set $h "key2" "val2"
+    nvs erase $h
+    set r1 [catch {nvs get $h "key1"}]
+    set r2 [catch {nvs get $h "key2"}]
+    nvs close $h
+    expr {$r1 == 1 && $r2 == 1}
+} -result {1}
+
+# --- Error cases ---
+
+test run nvs-6.1 {invalid handle} -body {
+    nvs close 99
+} -returnCodes error -match glob -result {*invalid NVS handle*}
+
+test run nvs-6.2 {open readonly then try to set} -body {
+    set h [nvs open "test_ns" readonly]
+    set result [catch {nvs set $h "key" "val"} msg]
+    nvs close $h
+    set result
+} -result {1}
+
+# --- Commit (explicit, though set auto-commits) ---
+
+test run nvs-7.1 {explicit commit} -body {
+    set h [nvs open "test_ns"]
+    nvs set $h "commit_key" "commit_val"
+    nvs commit $h
+    nvs close $h
+} -result {}
+
+# --- Cleanup: erase test namespace ---
+
+test run nvs-9.1 {cleanup test namespace} -body {
+    set h [nvs open "test_ns"]
+    nvs erase $h
+    nvs close $h
+} -result {}
+
+test report

@@ -1,0 +1,112 @@
+# esp32.test -- ESP32 platform command tests
+# Tests built-in esp32 commands, puts, gets, dotsugar, and paste mode.
+
+test suite "ESP32 Platform"
+test reset
+
+# --- esp32 heap ---
+
+test run esp32-1.1 {heap returns dict with free} -body {
+    set h [esp32 heap]
+    dict exists $h free
+} -result {1}
+
+test run esp32-1.2 {heap returns dict with minimum} -body {
+    set h [esp32 heap]
+    dict exists $h minimum
+} -result {1}
+
+test run esp32-1.3 {heap free is positive} -body {
+    set h [esp32 heap]
+    expr {[dict get $h free] > 0}
+} -result {1}
+
+test run esp32-1.4 {heap minimum is positive} -body {
+    set h [esp32 heap]
+    expr {[dict get $h minimum] > 0}
+} -result {1}
+
+# --- esp32 info ---
+
+test run esp32-2.1 {info returns dict with cores} -body {
+    set i [esp32 info]
+    dict exists $i cores
+} -result {1}
+
+test run esp32-2.2 {info returns dict with revision} -body {
+    set i [esp32 info]
+    dict exists $i revision
+} -result {1}
+
+test run esp32-2.3 {info returns dict with heap_free} -body {
+    set i [esp32 info]
+    dict exists $i heap_free
+} -result {1}
+
+test run esp32-2.4 {info cores is at least 1} -body {
+    set i [esp32 info]
+    expr {[dict get $i cores] >= 1}
+} -result {1}
+
+# --- esp32 sleep ---
+
+test run esp32-3.1 {sleep short duration} -body {
+    esp32 sleep 10
+    set ok 1
+} -result {1}
+
+test run esp32-3.2 {sleep wrong args} -body {
+    esp32 sleep
+} -returnCodes error -match glob -result {wrong*args*}
+
+# --- dotsugar ---
+
+test run esp32-4.1 {dotsugar query default} -body {
+    dotsugar 0
+    dotsugar
+} -result {0}
+
+test run esp32-4.2 {dotsugar enable} -body {
+    dotsugar 1
+    set result [dotsugar]
+    dotsugar 0
+    set result
+} -result {1}
+
+test run esp32-4.3 {dotsugar disable} -body {
+    dotsugar 1
+    dotsugar 0
+    dotsugar
+} -result {0}
+
+# --- paste mode ---
+
+test run esp32-5.1 {paste mode toggle} -body {
+    set r [paste 1]
+    expr {$r eq "paste" || $r eq "smart"}
+} -result {1}
+
+test run esp32-5.2 {paste mode set explicit} -body {
+    set r [paste 0]
+    set r
+} -result {smart}
+
+# --- puts ---
+
+test run esp32-6.1 {puts basic string} -body {
+    puts "test output"
+    set ok 1
+} -result {1}
+
+test run esp32-6.2 {puts -nonewline} -body {
+    puts -nonewline "no newline"
+    set ok 1
+} -result {1}
+
+# --- unknown subcommand ---
+
+test run esp32-7.1 {unknown subcommand} -body {
+    esp32 nosuchcmd
+} -returnCodes error -match glob -result {unknown esp32 subcommand*}
+
+test report

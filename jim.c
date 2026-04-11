@@ -74,6 +74,10 @@
 /* For INFINITY, even if math functions are not enabled */
 #include <math.h>
 
+/* Global flag for dot-sugar variable access ($var.key.subkey).
+ * Set via the 'dotsugar' command. Checked by the parser. */
+int jim_dotsugar_enabled = 0;
+
 /* We may decide to switch to using $[...] after all, so leave it as an option */
 /*#define EXPRSUGAR_BRACKET*/
 
@@ -1677,6 +1681,18 @@ static int JimParseVar(struct JimParserCtx *pc)
                 pc->p++;
                 pc->len--;
                 continue;
+            }
+            /* Arrow-sugar: allow '->' in variable names for nested dict access.
+             * $var->key->subkey is parsed as a single variable name, then
+             * resolved via dict traversal in Jim_GetVariable(). */
+            if (jim_dotsugar_enabled && *pc->p == '-' && pc->len > 2
+                    && pc->p[1] == '>' && pc->p > pc->tstart) {
+                /* Only allow -> if followed by alnum/underscore */
+                if (isalnum(UCHAR(pc->p[2])) || pc->p[2] == '_') {
+                    pc->p += 2;
+                    pc->len -= 2;
+                    continue;
+                }
             }
             break;
         }
@@ -4909,6 +4925,49 @@ Jim_Obj *Jim_GetVariable(Jim_Interp *interp, Jim_Obj *nameObjPtr, int flags)
             /* [dict] syntax sugar. */
             return JimDictSugarGet(interp, nameObjPtr, flags);
     }
+    /* Arrow-sugar: if enabled, try resolving $var->key->subkey as nested dict access */
+    if (interp->dotsugar) {
+        int nlen;
+        const char *nstr = Jim_GetString(nameObjPtr, &nlen);
+        /* Find first '->' */
+        const char *arrow = NULL;
+        for (const char *s = nstr; s < nstr + nlen - 1; s++) {
+            if (s[0] == '-' && s[1] == '>') { arrow = s; break; }
+        }
+        if (arrow && arrow > nstr && arrow < nstr + nlen - 2) {
+            /* Split at first ->: base = nstr[0..arrow), rest = arrow+2..end */
+            Jim_Obj *baseObj = Jim_NewStringObj(interp, nstr, (int)(arrow - nstr));
+            Jim_IncrRefCount(baseObj);
+            Jim_Obj *dictObj = Jim_GetVariable(interp, baseObj, JIM_NONE);
+            Jim_DecrRefCount(interp, baseObj);
+
+            if (dictObj) {
+                /* Walk remaining ->separated keys */
+                const char *p = arrow + 2;
+                Jim_Obj *cur = dictObj;
+                while (cur && p < nstr + nlen) {
+                    /* Find next -> */
+                    const char *next_arrow = NULL;
+                    for (const char *s = p; s < nstr + nlen - 1; s++) {
+                        if (s[0] == '-' && s[1] == '>') { next_arrow = s; break; }
+                    }
+                    int klen = next_arrow ? (int)(next_arrow - p) : (int)(nstr + nlen - p);
+                    Jim_Obj *keyObj = Jim_NewStringObj(interp, p, klen);
+                    Jim_Obj *val = NULL;
+                    if (Jim_DictKey(interp, cur, keyObj, &val, JIM_NONE) != JIM_OK) {
+                        Jim_FreeNewObj(interp, keyObj);
+                        cur = NULL;
+                        break;
+                    }
+                    Jim_FreeNewObj(interp, keyObj);
+                    cur = val;
+                    p = next_arrow ? next_arrow + 2 : nstr + nlen;
+                }
+                if (cur) return cur;
+            }
+        }
+    }
+
     if (flags & JIM_ERRMSG) {
         Jim_SetResultFormatted(interp, "can't read \"%#s\": no such variable", nameObjPtr);
     }

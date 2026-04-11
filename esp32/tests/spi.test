@@ -1,0 +1,72 @@
+# spi.test -- SPI extension tests
+#
+# Requires: spi_hw constraint if an SPI device is connected.
+
+test suite "SPI Extension"
+test reset
+
+# Set to 1 if an SPI device is connected (MOSI=11, MISO=12, SCLK=13, CS=10)
+test constraint spi_hw 0
+
+# --- Init / deinit (no device required) ---
+
+test run spi-1.1 {init SPI host 2 with valid pins} -body {
+    spi init 2 -mosi 11 -miso 12 -sclk 13
+} -result {}
+
+test run spi-1.2 {deinit SPI host 2} -body {
+    spi deinit 2
+} -result {}
+
+test run spi-1.3 {init with CS pin and frequency} -body {
+    spi init 2 -mosi 11 -miso 12 -sclk 13 -cs 10 -freq 2000000
+    spi deinit 2
+} -result {}
+
+# --- Error cases (always run) ---
+
+test run spi-2.1 {invalid SPI host} -body {
+    spi init 0 -mosi 11 -miso 12 -sclk 13
+} -returnCodes error -match glob -result {*invalid SPI host*}
+
+test run spi-2.2 {missing required pins} -body {
+    spi init 2 -mosi 11 -sclk 13
+} -returnCodes error -match glob -result {*must specify*}
+
+test run spi-2.3 {write without init} -body {
+    spi deinit 2
+    spi write 2 {0xAA 0xBB}
+} -returnCodes error -match glob -result {*not initialized*}
+
+test run spi-2.4 {read without init} -body {
+    spi read 2 4
+} -returnCodes error -match glob -result {*not initialized*}
+
+test run spi-2.5 {transfer without init} -body {
+    spi transfer 2 {0x00}
+} -returnCodes error -match glob -result {*not initialized*}
+
+# --- Transfer with real hardware ---
+
+test run spi-3.1 {write bytes to device} -body {
+    spi init 2 -mosi 11 -miso 12 -sclk 13 -cs 10
+    set n [spi write 2 {0xAA 0xBB}]
+    spi deinit 2
+    expr {$n == 2}
+} -constraints spi_hw -result {1}
+
+test run spi-3.2 {full-duplex transfer} -body {
+    spi init 2 -mosi 11 -miso 12 -sclk 13 -cs 10
+    set rx [spi transfer 2 {0x00 0x00} -rxlen 2]
+    spi deinit 2
+    expr {[llength $rx] == 2}
+} -constraints spi_hw -result {1}
+
+test run spi-3.3 {read bytes from device} -body {
+    spi init 2 -mosi 11 -miso 12 -sclk 13 -cs 10
+    set data [spi read 2 4]
+    spi deinit 2
+    expr {[llength $data] == 4}
+} -constraints spi_hw -result {1}
+
+test report

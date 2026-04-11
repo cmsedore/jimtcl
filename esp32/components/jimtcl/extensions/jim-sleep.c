@@ -60,7 +60,10 @@
 #include "jim.h"
 #include "jim-subcmd.h"
 #include "jim-esp32-sleep.h"
+#include "jim-esp32-task.h"
 #include "esp_sleep.h"
+#include "soc/soc_caps.h"
+#include "driver/gpio.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -103,6 +106,7 @@ int sleep_manager_register(const char *name, QueueHandle_t msg_queue,
             strncpy(v->callback_proc, callback_proc, sizeof(v->callback_proc) - 1);
             v->callback_proc[sizeof(v->callback_proc) - 1] = '\0';
             v->last_vote = SLEEP_VOTE_PENDING;
+            v->veto_reason[0] = '\0';
             if (v->vote_reply == NULL) {
                 v->vote_reply = xQueueCreate(1, sizeof(sleep_vote_t));
             }
@@ -238,16 +242,14 @@ static int consult_voter_main(Jim_Interp *interp, sleep_voter_t *voter, const ch
     snprintf(script, sizeof(script), "%s %s", voter->callback_proc, mode_str);
 
     int ret = Jim_Eval(interp, script);
-    if (ret == JIM_OK) {
-        const char *result = Jim_String(Jim_GetResult(interp));
-        if (strcmp(result, "ok") == 0) {
-            voter->last_vote = SLEEP_VOTE_APPROVE;
-        } else {
-            voter->last_vote = SLEEP_VOTE_VETO;
-        }
+    const char *result = Jim_String(Jim_GetResult(interp));
+    if (ret == JIM_OK && strcmp(result, "ok") == 0) {
+        voter->last_vote = SLEEP_VOTE_APPROVE;
+        voter->veto_reason[0] = '\0';
     } else {
-        /* Eval error counts as veto */
         voter->last_vote = SLEEP_VOTE_VETO;
+        strncpy(voter->veto_reason, result, sizeof(voter->veto_reason) - 1);
+        voter->veto_reason[sizeof(voter->veto_reason) - 1] = '\0';
     }
     return (voter->last_vote == SLEEP_VOTE_APPROVE) ? 0 : 1;
 }
@@ -256,22 +258,12 @@ static int consult_voter_main(Jim_Interp *interp, sleep_voter_t *voter, const ch
  * use the task's existing msg_queue with TASK_MSG_EVAL to get the result.
  * We repurpose the task_msg_t/task_reply_t protocol from jim-esp-task.c. */
 
-/* These must match the types in jim-esp-task.c */
-typedef struct {
-    int type;                   /* 0=EVAL, 1=SEND, 2=SHUTDOWN */
-    char *script;
-    QueueHandle_t reply_queue;
-} compat_task_msg_t;
-
-typedef struct {
-    int retcode;
-    char *result;
-} compat_task_reply_t;
-
 static int consult_voter_task(sleep_voter_t *voter, const char *mode_str, long timeout_ms)
 {
     if (!voter->msg_queue) {
         voter->last_vote = SLEEP_VOTE_VETO;
+        strncpy(voter->veto_reason, "no message queue", sizeof(voter->veto_reason) - 1);
+        voter->veto_reason[sizeof(voter->veto_reason) - 1] = '\0';
         return 1;
     }
 
@@ -280,14 +272,14 @@ static int consult_voter_task(sleep_voter_t *voter, const char *mode_str, long t
     snprintf(script, sizeof(script), "%s %s", voter->callback_proc, mode_str);
 
     /* Create a temporary reply queue for this consultation */
-    QueueHandle_t reply_q = xQueueCreate(1, sizeof(compat_task_reply_t));
+    QueueHandle_t reply_q = xQueueCreate(1, sizeof(task_reply_t));
     if (!reply_q) {
         voter->last_vote = SLEEP_VOTE_VETO;
         return 1;
     }
 
-    compat_task_msg_t msg;
-    msg.type = 0;  /* TASK_MSG_EVAL */
+    task_msg_t msg;
+    msg.type = TASK_MSG_EVAL;
     msg.script = strdup(script);
     msg.reply_queue = reply_q;
 
@@ -295,25 +287,36 @@ static int consult_voter_task(sleep_voter_t *voter, const char *mode_str, long t
         free(msg.script);
         vQueueDelete(reply_q);
         voter->last_vote = SLEEP_VOTE_VETO;
+        strncpy(voter->veto_reason, "queue full", sizeof(voter->veto_reason) - 1);
+        voter->veto_reason[sizeof(voter->veto_reason) - 1] = '\0';
         ESP_LOGW(TAG, "Voter '%s': queue full, counted as veto", voter->name);
         return 1;
     }
 
-    /* Wait for response */
-    compat_task_reply_t reply;
+    /* Wait for response.
+     * On timeout, do NOT delete reply_q — the task may still write to it. */
+    task_reply_t reply;
     if (xQueueReceive(reply_q, &reply, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
-        vQueueDelete(reply_q);
         voter->last_vote = SLEEP_VOTE_VETO;
+        strncpy(voter->veto_reason, "timeout", sizeof(voter->veto_reason) - 1);
+        voter->veto_reason[sizeof(voter->veto_reason) - 1] = '\0';
         ESP_LOGW(TAG, "Voter '%s': timeout, counted as veto", voter->name);
         return 1;
     }
 
     vQueueDelete(reply_q);
 
-    if (reply.retcode == 0 /* JIM_OK */ && reply.result && strcmp(reply.result, "ok") == 0) {
+    if (reply.retcode == JIM_OK && reply.result && strcmp(reply.result, "ok") == 0) {
         voter->last_vote = SLEEP_VOTE_APPROVE;
+        voter->veto_reason[0] = '\0';
     } else {
         voter->last_vote = SLEEP_VOTE_VETO;
+        if (reply.result) {
+            strncpy(voter->veto_reason, reply.result, sizeof(voter->veto_reason) - 1);
+            voter->veto_reason[sizeof(voter->veto_reason) - 1] = '\0';
+        } else {
+            strncpy(voter->veto_reason, "no response", sizeof(voter->veto_reason) - 1);
+        }
     }
 
     if (reply.result) free(reply.result);
@@ -343,7 +346,21 @@ static int configure_wake_sources(Jim_Interp *interp, sleep_mode_t mode)
 
             case WAKE_SOURCE_GPIO:
                 if (mode == SLEEP_MODE_LIGHT) {
-                    err = esp_sleep_enable_gpio_wakeup();
+                    /* Configure each pin in the mask for gpio wakeup */
+                    for (int pin = 0; pin < 64; pin++) {
+                        if (ws->config.gpio.pin_mask & (1ULL << pin)) {
+                            err = gpio_wakeup_enable((gpio_num_t)pin,
+                                ws->config.gpio.level ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL);
+                            if (err != ESP_OK) {
+                                ESP_LOGE(TAG, "gpio_wakeup_enable failed for GPIO %d: %s",
+                                         pin, esp_err_to_name(err));
+                                break;
+                            }
+                        }
+                    }
+                    if (err == ESP_OK) {
+                        err = esp_sleep_enable_gpio_wakeup();
+                    }
                 } else {
                     err = esp_sleep_enable_ext1_wakeup(ws->config.gpio.pin_mask,
                         ws->config.gpio.level ? ESP_EXT1_WAKEUP_ANY_HIGH : ESP_EXT1_WAKEUP_ALL_LOW);
@@ -367,10 +384,15 @@ static int configure_wake_sources(Jim_Interp *interp, sleep_mode_t mode)
                 break;
 
             case WAKE_SOURCE_TOUCH:
+#if SOC_PM_SUPPORT_TOUCH_SENSOR_WAKEUP
                 err = esp_sleep_enable_touchpad_wakeup();
                 if (err == ESP_OK) {
                     ESP_LOGI(TAG, "Wake source: touch pad %d", ws->config.touch.touch_pad);
                 }
+#else
+                ESP_LOGW(TAG, "Touch wakeup not supported on this chip, skipping");
+                continue;
+#endif
                 break;
         }
 
@@ -552,10 +574,7 @@ static int sleep_cmd_request(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
             Jim_ListAppendElement(interp, veto_entry, Jim_NewStringObj(interp, "voter", -1));
             Jim_ListAppendElement(interp, veto_entry, Jim_NewStringObj(interp, voter->name, -1));
             Jim_ListAppendElement(interp, veto_entry, Jim_NewStringObj(interp, "reason", -1));
-            const char *reason = "unspecified";
-            if (voter->last_vote == SLEEP_VOTE_VETO) {
-                reason = "vetoed";
-            }
+            const char *reason = voter->veto_reason[0] ? voter->veto_reason : "unspecified";
             Jim_ListAppendElement(interp, veto_entry, Jim_NewStringObj(interp, reason, -1));
             Jim_ListAppendElement(interp, vetoes, veto_entry);
             ESP_LOGW(TAG, "Voter '%s' vetoed sleep", voter->name);
@@ -629,7 +648,7 @@ static int sleep_cmd_wake(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 {
     sleep_manager_init();
     sleep_interp_data_t *sid = get_sleep_data(interp);
-    int voter_id = sid->voter_id; /* -1 if not registered, still allowed to set wake sources */
+    int voter_id = sid->voter_id;
 
     const char *subcmd = Jim_String(argv[0]);
 
@@ -684,6 +703,12 @@ static int sleep_cmd_wake(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
         return JIM_OK;
     }
 
+    /* All wake source types below require voter registration */
+    if (voter_id < 0) {
+        Jim_SetResultString(interp, "must call 'sleep register' before adding wake sources", -1);
+        return JIM_ERR;
+    }
+
     if (strcmp(subcmd, "timer") == 0) {
         if (argc < 2) {
             Jim_SetResultString(interp, "wrong # args: should be \"sleep wake timer microseconds\"", -1);
@@ -704,7 +729,9 @@ static int sleep_cmd_wake(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
             Jim_SetResultString(interp, "maximum wake sources reached", -1);
             return JIM_ERR;
         }
+        xSemaphoreTake(manager.mutex, portMAX_DELAY);
         manager.wake_sources[src_id].config.timer.duration_us = (uint64_t)duration_us;
+        xSemaphoreGive(manager.mutex);
         Jim_SetResultInt(interp, src_id);
         return JIM_OK;
     }
@@ -735,8 +762,10 @@ static int sleep_cmd_wake(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
             Jim_SetResultString(interp, "maximum wake sources reached", -1);
             return JIM_ERR;
         }
+        xSemaphoreTake(manager.mutex, portMAX_DELAY);
         manager.wake_sources[src_id].config.gpio.pin_mask = (uint64_t)mask_val;
         manager.wake_sources[src_id].config.gpio.level = level;
+        xSemaphoreGive(manager.mutex);
         Jim_SetResultInt(interp, src_id);
         return JIM_OK;
     }
@@ -752,7 +781,9 @@ static int sleep_cmd_wake(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
             Jim_SetResultString(interp, "maximum wake sources reached", -1);
             return JIM_ERR;
         }
+        xSemaphoreTake(manager.mutex, portMAX_DELAY);
         manager.wake_sources[src_id].config.uart.uart_num = (int)uart_num;
+        xSemaphoreGive(manager.mutex);
         Jim_SetResultInt(interp, src_id);
         return JIM_OK;
     }
@@ -770,7 +801,9 @@ static int sleep_cmd_wake(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
             Jim_SetResultString(interp, "maximum wake sources reached", -1);
             return JIM_ERR;
         }
+        xSemaphoreTake(manager.mutex, portMAX_DELAY);
         manager.wake_sources[src_id].config.touch.touch_pad = (int)pad;
+        xSemaphoreGive(manager.mutex);
         Jim_SetResultInt(interp, src_id);
         return JIM_OK;
     }

@@ -55,6 +55,7 @@
 #include "freertos/semphr.h"
 #include "esp_timer.h"
 #include "esp_sleep.h"
+#include "soc/soc_caps.h"
 #include "esp_log.h"
 
 static const char *TAG = "jim-watchdog";
@@ -70,6 +71,7 @@ typedef struct {
     int64_t last_pong_us;           /* When the task last responded */
     int consecutive_failures;       /* How many pings went unanswered */
     int restarted_by_watchdog;      /* Count of watchdog-initiated restarts */
+    QueueHandle_t reply_queue;      /* Persistent reply queue for health checks */
 } wd_monitored_t;
 
 /* Watchdog state */
@@ -109,21 +111,28 @@ static void watchdog_check_task(wd_monitored_t *mon)
         return;
     }
 
-    /* Send a simple eval that the task should respond to quickly */
-    QueueHandle_t reply_q = xQueueCreate(1, sizeof(task_reply_t));
-    if (!reply_q) return;
+    /* Use persistent reply queue; create on first use */
+    if (!mon->reply_queue) {
+        mon->reply_queue = xQueueCreate(1, sizeof(task_reply_t));
+        if (!mon->reply_queue) return;
+    }
+
+    /* Drain any stale reply from a previous timed-out ping */
+    task_reply_t stale;
+    while (xQueueReceive(mon->reply_queue, &stale, 0) == pdTRUE) {
+        if (stale.result) free(stale.result);
+    }
 
     task_msg_t msg;
     msg.type = TASK_MSG_EVAL;
     msg.script = strdup("watchdog kick; return ok");
-    msg.reply_queue = reply_q;
+    msg.reply_queue = mon->reply_queue;
 
     mon->last_ping_sent_us = esp_timer_get_time();
 
     if (xQueueSend(ts->msg_queue, &msg, pdMS_TO_TICKS(500)) != pdTRUE) {
         /* Can't even queue the message — task is stuck */
         free(msg.script);
-        vQueueDelete(reply_q);
         mon->consecutive_failures++;
         ESP_LOGW(TAG, "Task '%s': queue full (failure #%d)", ts->name, mon->consecutive_failures);
         return;
@@ -131,17 +140,15 @@ static void watchdog_check_task(wd_monitored_t *mon)
 
     /* Wait for response with deadline */
     task_reply_t reply;
-    if (xQueueReceive(reply_q, &reply, pdMS_TO_TICKS(wd.deadline_ms)) == pdTRUE) {
+    if (xQueueReceive(mon->reply_queue, &reply, pdMS_TO_TICKS(wd.deadline_ms)) == pdTRUE) {
         /* Task responded */
         mon->last_pong_us = esp_timer_get_time();
         mon->consecutive_failures = 0;
         if (reply.result) free(reply.result);
-        vQueueDelete(reply_q);
         return;
     }
 
-    /* Timeout — task is unresponsive */
-    vQueueDelete(reply_q);
+    /* Timeout — task is unresponsive. Reply queue stays valid for next check. */
     mon->consecutive_failures++;
 
     ESP_LOGW(TAG, "Task '%s': unresponsive (failure #%d, deadline %lu ms)",
@@ -342,6 +349,10 @@ static int wd_cmd_unmonitor(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
     for (int i = 0; i < WD_MAX_MONITORED; i++) {
         if (wd.monitored[i].active && wd.monitored[i].task_slot == (int)task_handle) {
             wd.monitored[i].active = 0;
+            if (wd.monitored[i].reply_queue) {
+                vQueueDelete(wd.monitored[i].reply_queue);
+                wd.monitored[i].reply_queue = NULL;
+            }
             ESP_LOGI(TAG, "Stopped monitoring task slot %ld", task_handle);
             break;
         }
@@ -461,7 +472,9 @@ static int wd_cmd_force_sleep(Jim_Interp *interp, int argc, Jim_Obj *const *argv
                     }
                     break;
                 case WAKE_SOURCE_TOUCH:
+#if SOC_PM_SUPPORT_TOUCH_SENSOR_WAKEUP
                     esp_sleep_enable_touchpad_wakeup();
+#endif
                     break;
             }
         }

@@ -1,0 +1,106 @@
+# gpio.test -- GPIO extension tests
+#
+# Requires: gpio_loopback constraint if GPIO 4 is wired to GPIO 5.
+
+test suite "GPIO Extension"
+test reset
+
+# Set to 1 if GPIO 4 is physically connected to GPIO 5
+test constraint gpio_loopback 0
+
+# --- Mode tests (no special hardware needed) ---
+
+test run gpio-1.1 {set pin mode output} -body {
+    gpio mode 2 output
+} -result {}
+
+test run gpio-1.2 {set pin mode input} -body {
+    gpio mode 2 input
+} -result {}
+
+test run gpio-1.3 {set pin mode input_output} -body {
+    gpio mode 2 input_output
+} -result {}
+
+test run gpio-1.4 {set pin mode disable} -body {
+    gpio mode 2 disable
+} -result {}
+
+# --- Error cases (always run) ---
+
+test run gpio-2.1 {invalid pin number} -body {
+    gpio mode 999 output
+} -returnCodes error -match glob -result {*invalid GPIO pin*}
+
+test run gpio-2.2 {bad mode string} -body {
+    gpio mode 2 analog
+} -returnCodes error -match glob -result {*bad mode*}
+
+# --- Pullup / pulldown (basic, no hardware verification) ---
+
+test run gpio-3.1 {enable pullup on pin} -body {
+    gpio mode 2 input
+    gpio pullup 2 1
+} -result {}
+
+test run gpio-3.2 {disable pullup on pin} -body {
+    gpio pullup 2 0
+} -result {}
+
+test run gpio-3.3 {enable pulldown on pin} -body {
+    gpio pulldown 2 1
+} -result {}
+
+test run gpio-3.4 {disable pulldown on pin} -body {
+    gpio pulldown 2 0
+} -result {}
+
+# --- Read (pin floating, value is indeterminate but must return 0 or 1) ---
+
+test run gpio-4.1 {read returns integer} -body {
+    gpio mode 2 input
+    set val [gpio read 2]
+    expr {$val == 0 || $val == 1}
+} -result {1}
+
+# --- Write + Read loopback (GPIO 4 -> GPIO 5) ---
+
+test run gpio-5.1 {loopback write high read high} -body {
+    gpio mode 4 output
+    gpio mode 5 input
+    gpio write 4 1
+    after 10
+    gpio read 5
+} -result {1} -constraints gpio_loopback
+
+test run gpio-5.2 {loopback write low read low} -body {
+    gpio mode 4 output
+    gpio mode 5 input
+    gpio write 4 0
+    after 10
+    gpio read 5
+} -result {0} -constraints gpio_loopback
+
+# --- Interrupt registration (can test registration without hardware trigger) ---
+
+test run gpio-6.1 {interrupt list is initially empty or a list} -body {
+    set lst [gpio interrupt list]
+    expr {[llength $lst] >= 0}
+} -result {1}
+
+test run gpio-6.2 {interrupt remove on unregistered pin does not error} -body {
+    gpio mode 2 input
+    gpio interrupt 2 -remove
+} -result {}
+
+test run gpio-6.3 {interrupt bad edge type} -body {
+    gpio interrupt 2 -edge invalid -callback {myproc mytask}
+} -returnCodes error -match glob -result {*bad edge type*}
+
+# --- Cleanup ---
+
+test run gpio-9.1 {cleanup: disable test pins} -body {
+    gpio mode 2 disable
+} -result {}
+
+test report

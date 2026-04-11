@@ -1,0 +1,129 @@
+# json.test -- JSON extension tests
+# Fully testable without hardware; exercises json encode and json decode.
+
+test suite "JSON Extension"
+test reset
+
+# --- Encode tests ---
+
+test run json-1.1 {encode flat dict} -body {
+    json encode {name ESP32 version 1.0}
+} -result {{"name":"ESP32","version":1}}
+
+test run json-1.2 {encode nested dict} -body {
+    json encode {outer {inner value}}
+} -result {{"outer":{"inner":"value"}}}
+
+test run json-1.3 {encode integer values} -body {
+    json encode {count 42 offset -7}
+} -result {{"count":42,"offset":-7}}
+
+test run json-1.4 {encode boolean true} -body {
+    json encode {enabled true}
+} -result {{"enabled":true}}
+
+test run json-1.5 {encode boolean false} -body {
+    json encode {enabled false}
+} -result {{"enabled":false}}
+
+test run json-1.6 {encode null value} -body {
+    json encode {value null}
+} -result {{"value":null}}
+
+test run json-1.7 {encode floating point} -body {
+    json encode {temperature 23.5}
+} -result {{"temperature":23.5}}
+
+test run json-1.8 {encode empty string value} -body {
+    json encode {key {}}
+} -result {{"key":""}}
+
+test run json-1.9 {encode odd-element list as array} -body {
+    json encode {msg {hello world today}}
+} -result {{"msg":["hello","world","today"]}}
+
+test run json-1.10 {encode list as array} -body {
+    json encode {items {a b c}}
+} -result {{"items":["a","b","c"]}}
+
+# --- Decode tests ---
+
+test run json-2.1 {decode simple object} -body {
+    json decode {{"name":"ESP32","version":"1.0"}}
+} -result {name ESP32 version 1.0}
+
+test run json-2.2 {decode nested object} -body {
+    set result [json decode {{"outer":{"inner":"value"}}}]
+    dict get $result outer inner
+} -result {value}
+
+test run json-2.3 {decode array} -body {
+    json decode {["a","b","c"]}
+} -result {a b c}
+
+test run json-2.4 {decode integer} -body {
+    set r [json decode {{"count":42}}]
+    dict get $r count
+} -result {42}
+
+test run json-2.5 {decode boolean true} -body {
+    set r [json decode {{"flag":true}}]
+    dict get $r flag
+} -result {1}
+
+test run json-2.6 {decode boolean false} -body {
+    set r [json decode {{"flag":false}}]
+    dict get $r flag
+} -result {0}
+
+test run json-2.7 {decode null} -body {
+    set r [json decode {{"val":null}}]
+    dict get $r val
+} -result {}
+
+test run json-2.8 {decode mixed types} -body {
+    set r [json decode {{"s":"hello","n":99,"b":true,"a":[1,2,3]}}]
+    list [dict get $r s] [dict get $r n] [dict get $r b] [dict get $r a]
+} -result {hello 99 1 {1 2 3}}
+
+test run json-2.9 {decode array of objects} -body {
+    set r [json decode {[{"id":1},{"id":2}]}]
+    llength $r
+} -result {2}
+
+test run json-2.10 {decode floating point} -body {
+    set r [json decode {{"temp":23.5}}]
+    dict get $r temp
+} -result {23.5}
+
+# --- Round-trip tests ---
+
+test run json-3.1 {round-trip flat dict} -body {
+    set d {name ESP32 count 42}
+    set j [json encode $d]
+    set d2 [json decode $j]
+    list [dict get $d2 name] [dict get $d2 count]
+} -result {ESP32 42}
+
+test run json-3.2 {round-trip nested dict} -body {
+    set d {config {baud 115200 parity none}}
+    set j [json encode $d]
+    set d2 [json decode $j]
+    dict get $d2 config baud
+} -result {115200}
+
+# --- Error cases ---
+
+test run json-4.1 {decode invalid JSON} -body {
+    json decode {not valid json{{{}}
+} -returnCodes error -match glob -result {JSON parse error*}
+
+test run json-4.2 {decode empty string} -body {
+    json decode {}
+} -returnCodes error -match glob -result {JSON parse error*}
+
+test run json-4.3 {encode odd-element list as dict fails} -body {
+    json encode {a b c}
+} -returnCodes error -match glob -result {*not a valid dict*}
+
+test report

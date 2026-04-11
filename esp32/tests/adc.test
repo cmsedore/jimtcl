@@ -1,0 +1,70 @@
+# adc.test -- ADC extension tests
+#
+# ADC reads work even on floating pins (returns some raw value).
+
+test suite "ADC Extension"
+test reset
+
+# --- Init / deinit ---
+
+test run adc-1.1 {init ADC unit 0} -body {
+    adc init 0
+} -result {}
+
+test run adc-1.2 {init ADC unit 0 with options} -body {
+    adc init 0 -atten 11dB -width 12
+} -result {}
+
+test run adc-1.3 {deinit ADC unit 0} -body {
+    adc deinit 0
+} -result {}
+
+# --- Error cases (always run) ---
+
+test run adc-2.1 {invalid ADC unit} -body {
+    adc init 5
+} -returnCodes error -match glob -result {*invalid ADC unit*}
+
+test run adc-2.2 {read before init} -body {
+    adc deinit 0
+    adc read 0 0
+} -returnCodes error -match glob -result {*not initialized*}
+
+test run adc-2.3 {voltage before init} -body {
+    adc deinit 0
+    adc voltage 0 0
+} -returnCodes error -match glob -result {*not initialized*}
+
+test run adc-2.4 {bad attenuation value} -body {
+    adc init 0 -atten 99dB
+} -returnCodes error -match glob -result {*bad attenuation*}
+
+test run adc-2.5 {bad width value} -body {
+    adc init 0 -width 3
+} -returnCodes error -match glob -result {*bad width*}
+
+# --- Read (floating pin, value is indeterminate but must be a number) ---
+
+test run adc-3.1 {read returns an integer} -body {
+    adc init 0
+    set raw [adc read 0 0]
+    adc deinit 0
+    expr {[string is integer -strict $raw]}
+} -result {1}
+
+test run adc-3.2 {voltage returns an integer} -body {
+    adc init 0
+    set mv [adc voltage 0 0]
+    adc deinit 0
+    expr {[string is integer -strict $mv]}
+} -result {1}
+
+# --- Init is idempotent (re-init same unit) ---
+
+test run adc-4.1 {re-init same unit without deinit} -body {
+    adc init 0
+    adc init 0
+    adc deinit 0
+} -result {}
+
+test report

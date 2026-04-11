@@ -40,6 +40,10 @@
 #include "jim-subcmd.h"
 #include "esp_log.h"
 
+#ifdef CONFIG_JIM_EXT_MPACK
+#include "jim-mpack.h"
+#endif
+
 #include "esp_ieee802154.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -56,6 +60,8 @@ typedef struct {
     QueueHandle_t rx_queue;       /* Received frames queue */
     SemaphoreHandle_t tx_done;    /* Signaled when TX completes */
     int tx_ok;                    /* Last TX result */
+    SemaphoreHandle_t ed_done;    /* Signaled when energy detect completes */
+    int8_t ed_power;              /* Energy detect result (dBm) */
 } ieee802154_state_t;
 
 static ieee802154_state_t radio_state = { 0 };
@@ -123,8 +129,14 @@ void esp_ieee802154_transmit_failed(const uint8_t *frame, esp_ieee802154_tx_erro
 
 void esp_ieee802154_energy_detect_done(int8_t power)
 {
-    /* Handled inline via esp_ieee802154_energy_detect - this is a stub
-     * in case the framework requires it. The sync API blocks internally. */
+    radio_state.ed_power = power;
+    if (radio_state.ed_done) {
+        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+        xSemaphoreGiveFromISR(radio_state.ed_done, &xHigherPriorityTaskWoken);
+        if (xHigherPriorityTaskWoken) {
+            portYIELD_FROM_ISR();
+        }
+    }
 }
 
 void esp_ieee802154_receive_failed(uint16_t error)
@@ -181,6 +193,13 @@ static int ieee802154_cmd_init(Jim_Interp *interp, int argc, Jim_Obj *const *arg
     }
     if (!radio_state.tx_done) {
         radio_state.tx_done = xSemaphoreCreateBinary();
+    }
+    if (!radio_state.ed_done) {
+        radio_state.ed_done = xSemaphoreCreateBinary();
+        if (!radio_state.ed_done) {
+            Jim_SetResultString(interp, "failed to create energy detect semaphore", -1);
+            return JIM_ERR;
+        }
     }
 
     esp_ieee802154_enable();
@@ -277,30 +296,73 @@ static int ieee802154_cmd_send(Jim_Interp *interp, int argc, Jim_Obj *const *arg
         return JIM_ERR;
     }
 
-    /* argv[0] is a list of byte values */
-    int data_len = Jim_ListLength(interp, argv[0]);
-    if (data_len <= 0 || data_len > IEEE802154_MAX_FRAME_LEN) {
-        Jim_SetResultFormatted(interp, "frame length must be 1-%d bytes", IEEE802154_MAX_FRAME_LEN);
-        return JIM_ERR;
+    /* Check for -mpack flag */
+    int mpack_flag = 0;
+    int data_arg = 0;
+    for (int i = 0; i < argc; i++) {
+        const char *s = Jim_String(argv[i]);
+        if (strcmp(s, "-mpack") == 0) {
+            mpack_flag = 1;
+        } else {
+            data_arg = i;
+        }
+    }
+
+    uint8_t *payload = NULL;
+    int data_len = 0;
+
+#ifdef CONFIG_JIM_EXT_MPACK
+    if (mpack_flag) {
+        /* Encode dict as mpack */
+        size_t mpack_len = 0;
+        payload = jim_dict_to_mpack(interp, argv[data_arg], &mpack_len);
+        if (!payload) return JIM_ERR;
+        data_len = (int)mpack_len;
+        if (data_len > IEEE802154_MAX_FRAME_LEN) {
+            free(payload);
+            Jim_SetResultFormatted(interp, "mpack payload too large (%d > %d)",
+                                   data_len, IEEE802154_MAX_FRAME_LEN);
+            return JIM_ERR;
+        }
+    } else
+#endif
+    {
+        if (mpack_flag) {
+            Jim_SetResultString(interp, "mpack extension not enabled", -1);
+            return JIM_ERR;
+        }
+        /* Raw byte list */
+        data_len = Jim_ListLength(interp, argv[data_arg]);
+        if (data_len <= 0 || data_len > IEEE802154_MAX_FRAME_LEN) {
+            Jim_SetResultFormatted(interp, "frame length must be 1-%d bytes", IEEE802154_MAX_FRAME_LEN);
+            return JIM_ERR;
+        }
+        payload = malloc(data_len);
+        if (!payload) {
+            Jim_SetResultString(interp, "out of memory", -1);
+            return JIM_ERR;
+        }
+        for (int i = 0; i < data_len; i++) {
+            Jim_Obj *elem = Jim_ListGetIndex(interp, argv[data_arg], i);
+            long byte_val;
+            if (Jim_GetLong(interp, elem, &byte_val) != JIM_OK) {
+                free(payload);
+                return JIM_ERR;
+            }
+            payload[i] = (uint8_t)(byte_val & 0xFF);
+        }
     }
 
     /* ESP-IDF expects frame[0] = length, followed by the frame bytes */
     uint8_t *frame = malloc(data_len + 1);
     if (!frame) {
+        free(payload);
         Jim_SetResultString(interp, "out of memory", -1);
         return JIM_ERR;
     }
     frame[0] = (uint8_t)data_len;
-
-    for (int i = 0; i < data_len; i++) {
-        Jim_Obj *elem = Jim_ListGetIndex(interp, argv[0], i);
-        long byte_val;
-        if (Jim_GetLong(interp, elem, &byte_val) != JIM_OK) {
-            free(frame);
-            return JIM_ERR;
-        }
-        frame[i + 1] = (uint8_t)(byte_val & 0xFF);
-    }
+    memcpy(frame + 1, payload, data_len);
+    free(payload);
 
     radio_state.tx_ok = 0;
     esp_err_t err = esp_ieee802154_transmit(frame, false);
@@ -339,8 +401,15 @@ static int ieee802154_cmd_receive(Jim_Interp *interp, int argc, Jim_Obj *const *
     }
 
     long timeout_ms = 5000;
-    if (argc >= 1) {
-        if (Jim_GetLong(interp, argv[0], &timeout_ms) != JIM_OK) return JIM_ERR;
+    int mpack_flag = 0;
+
+    for (int i = 0; i < argc; i++) {
+        const char *s = Jim_String(argv[i]);
+        if (strcmp(s, "-mpack") == 0) {
+            mpack_flag = 1;
+        } else {
+            if (Jim_GetLong(interp, argv[i], &timeout_ms) != JIM_OK) return JIM_ERR;
+        }
     }
 
     rx_frame_t rx;
@@ -349,15 +418,37 @@ static int ieee802154_cmd_receive(Jim_Interp *interp, int argc, Jim_Obj *const *
         return JIM_ERR;
     }
 
-    /* Build result dict: data (byte list), rssi, lqi */
+    /* Build result dict: data, rssi, lqi */
     Jim_Obj *result = Jim_NewListObj(interp, NULL, 0);
 
     Jim_ListAppendElement(interp, result, Jim_NewStringObj(interp, "data", -1));
-    Jim_Obj *data_list = Jim_NewListObj(interp, NULL, 0);
-    for (int i = 0; i < rx.len; i++) {
-        Jim_ListAppendElement(interp, data_list, Jim_NewIntObj(interp, rx.data[i]));
+
+#ifdef CONFIG_JIM_EXT_MPACK
+    if (mpack_flag && rx.len > 0) {
+        /* Decode mpack payload to dict */
+        if (jim_mpack_to_dict(interp, rx.data, rx.len) == JIM_OK) {
+            Jim_ListAppendElement(interp, result, Jim_GetResult(interp));
+        } else {
+            /* Fall back to byte list on decode failure */
+            Jim_Obj *data_list = Jim_NewListObj(interp, NULL, 0);
+            for (int i = 0; i < rx.len; i++) {
+                Jim_ListAppendElement(interp, data_list, Jim_NewIntObj(interp, rx.data[i]));
+            }
+            Jim_ListAppendElement(interp, result, data_list);
+        }
+    } else
+#endif
+    {
+        if (mpack_flag) {
+            Jim_SetResultString(interp, "mpack extension not enabled", -1);
+            return JIM_ERR;
+        }
+        Jim_Obj *data_list = Jim_NewListObj(interp, NULL, 0);
+        for (int i = 0; i < rx.len; i++) {
+            Jim_ListAppendElement(interp, data_list, Jim_NewIntObj(interp, rx.data[i]));
+        }
+        Jim_ListAppendElement(interp, result, data_list);
     }
-    Jim_ListAppendElement(interp, result, data_list);
 
     Jim_ListAppendElement(interp, result, Jim_NewStringObj(interp, "rssi", -1));
     Jim_ListAppendElement(interp, result, Jim_NewIntObj(interp, rx.rssi));
@@ -384,20 +475,26 @@ static int ieee802154_cmd_energydetect(Jim_Interp *interp, int argc, Jim_Obj *co
         return JIM_ERR;
     }
 
+    /* Drain any stale semaphore signal from a previous timed-out ED */
+    xSemaphoreTake(radio_state.ed_done, 0);
+    radio_state.ed_power = 0;
+
     esp_err_t err = esp_ieee802154_energy_detect((uint32_t)duration_us);
     if (err != ESP_OK) {
         Jim_SetResultFormatted(interp, "energy detect failed: %s", esp_err_to_name(err));
         return JIM_ERR;
     }
 
-    /* The ED result is returned asynchronously via callback.
-     * For simplicity we pause briefly then return. A more robust
-     * implementation would use a semaphore from the ED done callback. */
-    vTaskDelay(pdMS_TO_TICKS(duration_us / 1000 + 10));
+    /* Wait for the ED done callback to signal the result */
+    if (xSemaphoreTake(radio_state.ed_done, pdMS_TO_TICKS(duration_us / 1000 + 100)) != pdTRUE) {
+        Jim_SetResultString(interp, "energy detect timeout", -1);
+        return JIM_ERR;
+    }
 
     /* Re-enter receive mode */
     esp_ieee802154_receive();
 
+    Jim_SetResultInt(interp, radio_state.ed_power);
     return JIM_OK;
 }
 
@@ -445,18 +542,18 @@ static const jim_subcmd_type ieee802154_command_table[] = {
         /* Description: Get or set radio parameters */
     },
     {   "send",
-        "data_bytes",
+        "data_bytes ?-mpack?",
         ieee802154_cmd_send,
         1,
-        1,
-        /* Description: Transmit a raw 802.15.4 frame */
+        -1,
+        /* Description: Transmit a raw 802.15.4 frame (or mpack-encoded dict) */
     },
     {   "receive",
-        "?timeout_ms?",
+        "?timeout_ms? ?-mpack?",
         ieee802154_cmd_receive,
         0,
-        1,
-        /* Description: Receive a frame (blocking with timeout) */
+        -1,
+        /* Description: Receive a frame (blocking with timeout, optional mpack decode) */
     },
     {   "energydetect",
         "duration_us",

@@ -8,11 +8,16 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "esp_system.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "nvs_flash.h"
+#include "esp_vfs_dev.h"
+#include "driver/uart.h"
 
 #include "jim.h"
 #include "jim-esp32.h"
@@ -71,6 +76,17 @@ void app_main(void)
     }
     ESP_ERROR_CHECK(ret);
 
+#ifndef CONFIG_JIM_BOOT_MPACK
+    /* Install UART driver and configure VFS for linenoise-based REPL.
+     * This gives us proper line editing, echo, and history.
+     * Skip in mpack boot mode — the control plane manages its own UART. */
+    setvbuf(stdin, NULL, _IONBF, 0);
+    uart_driver_install(CONFIG_ESP_CONSOLE_UART_NUM, 4096, 0, 0, NULL, 0);
+    esp_vfs_dev_uart_use_driver(CONFIG_ESP_CONSOLE_UART_NUM);
+    esp_vfs_dev_uart_port_set_rx_line_endings(CONFIG_ESP_CONSOLE_UART_NUM, ESP_LINE_ENDINGS_CR);
+    esp_vfs_dev_uart_port_set_tx_line_endings(CONFIG_ESP_CONSOLE_UART_NUM, ESP_LINE_ENDINGS_CRLF);
+#endif
+
     ESP_LOGI(TAG, "=================================");
     ESP_LOGI(TAG, "  Jim Tcl for ESP32");
     ESP_LOGI(TAG, "  Version %d.%d", JIM_VERSION / 100, JIM_VERSION % 100);
@@ -93,8 +109,26 @@ void app_main(void)
         goto cleanup;
     }
 
-    /* Enter interactive mode */
+#ifdef CONFIG_JIM_BOOT_MPACK
+    /* Boot into MessagePack control plane mode on console UART.
+     * Suppress all log output — binary COBS frames and text logs can't share UART. */
+    ESP_LOGI(TAG, "Starting in MessagePack control plane mode");
+    esp_log_level_set("*", ESP_LOG_NONE);
+    {
+        int ret = Jim_Eval(interp, "ctlplane start serial 0 -baud 115200");
+        if (ret != JIM_OK) {
+            ESP_LOGE(TAG, "Failed to start control plane: %s",
+                     Jim_String(Jim_GetResult(interp)));
+        }
+    }
+    /* Block forever — control plane task handles everything */
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(10000));
+    }
+#else
+    /* Enter interactive REPL mode */
     Jim_Esp32InteractivePrompt(interp);
+#endif
 
 cleanup:
     Jim_FreeInterp(interp);

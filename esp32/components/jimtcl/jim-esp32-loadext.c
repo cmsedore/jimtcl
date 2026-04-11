@@ -6,6 +6,7 @@
 
 #include "jim.h"
 #include "jim-esp32.h"
+#include "soc/soc_caps.h"
 
 /* Standard Jim extensions compiled in */
 extern int Jim_packageInit(Jim_Interp *interp);
@@ -27,13 +28,100 @@ int Jim_InitStaticExtensions(Jim_Interp *interp)
 
     /* ESP32-specific extensions */
     Jim_gpioInit(interp);
+#ifdef CONFIG_ESP_WIFI_ENABLED
     Jim_wifiInit(interp);
+#endif
     Jim_i2cInit(interp);
     Jim_nvsInit(interp);
     Jim_esp_taskInit(interp);
+#if defined(SOC_IEEE802154_SUPPORTED) && SOC_IEEE802154_SUPPORTED
     Jim_ieee802154Init(interp);
+#endif
     Jim_sleepInit(interp);
     Jim_watchdogInit(interp);
+
+    /* Protocol extensions (Kconfig-gated) */
+#if defined(CONFIG_JIM_EXT_HTTP) && defined(CONFIG_ESP_WIFI_ENABLED)
+    Jim_httpInit(interp);
+#endif
+#if defined(CONFIG_JIM_EXT_MQTT) && defined(CONFIG_ESP_WIFI_ENABLED)
+    Jim_mqttInit(interp);
+#endif
+#if defined(CONFIG_JIM_EXT_WEBSOCKET) && defined(CONFIG_ESP_WIFI_ENABLED)
+    Jim_websocketInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_JSON
+    Jim_jsonInit(interp);
+#endif
+#if defined(CONFIG_JIM_EXT_TWAI) && defined(SOC_TWAI_SUPPORTED)
+    Jim_twaiInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_SERIAL
+    Jim_serialInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_ADC
+    Jim_adcInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_PWM
+    Jim_pwmInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_TIMER
+    Jim_timerInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_FS
+    Jim_fsInit(interp);
+#endif
+#if defined(CONFIG_JIM_EXT_OTA) && defined(CONFIG_ESP_WIFI_ENABLED)
+    Jim_otaInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_SPI
+    Jim_spiInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_ONEWIRE
+    Jim_onewireInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_CRON
+    Jim_cronInit(interp);
+#endif
+#if defined(CONFIG_JIM_EXT_SYSLOG) && defined(CONFIG_ESP_WIFI_ENABLED)
+    Jim_syslogInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_TEST
+    Jim_testInit(interp);
+#endif
+#if defined(CONFIG_JIM_EXT_TCP) && defined(CONFIG_ESP_WIFI_ENABLED)
+    Jim_tcpInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_BLE
+    Jim_bleInit(interp);
+#endif
+#if defined(CONFIG_JIM_EXT_ESPNOW) && defined(CONFIG_ESP_WIFI_ENABLED)
+    Jim_espnowInit(interp);
+#endif
+#if defined(CONFIG_JIM_EXT_MDNS) && defined(CONFIG_ESP_WIFI_ENABLED)
+    Jim_mdnsInit(interp);
+#endif
+#if defined(CONFIG_JIM_EXT_SNTP) && defined(CONFIG_ESP_WIFI_ENABLED)
+    Jim_sntpInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_MODBUS
+    Jim_modbusInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_MPACK
+    Jim_mpackInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_CTLPLANE
+    Jim_ctlplaneInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_RMT
+    Jim_rmtInit(interp);
+#endif
+#ifdef CONFIG_JIM_EXT_PCNT
+    Jim_pcntInit(interp);
+#endif
+#if defined(CONFIG_JIM_EXT_MCPWM) && defined(SOC_MCPWM_SUPPORTED)
+    Jim_mcpwmInit(interp);
+#endif
 
     return JIM_OK;
 }

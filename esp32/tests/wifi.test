@@ -1,0 +1,74 @@
+# wifi.test -- WiFi extension tests
+#
+# Requires: wifi_available constraint if a WiFi network is accessible.
+# Set wifi_ssid and wifi_pass variables before enabling the constraint.
+
+test suite "WiFi Extension"
+test reset
+
+# Set to 1 if WiFi network is available for testing
+test constraint wifi_available 0
+
+# Configure these before enabling wifi_available
+if {![info exists wifi_ssid]} { set wifi_ssid "TestNetwork" }
+if {![info exists wifi_pass]} { set wifi_pass "TestPassword" }
+
+# --- Init (always works) ---
+
+test run wifi-1.1 {wifi init succeeds} -body {
+    wifi init
+} -result {}
+
+test run wifi-1.2 {wifi init is idempotent} -body {
+    wifi init
+    wifi init
+} -result {}
+
+# --- Status before connect ---
+
+test run wifi-2.1 {wifi status returns a valid state} -body {
+    set st [wifi status]
+    expr {$st in {uninitialized disconnected connected}}
+} -result {1}
+
+# --- Error cases (always run) ---
+
+test run wifi-3.1 {disconnect before connect returns error} -body {
+    wifi disconnect
+} -match glob -result {*}
+
+test run wifi-3.2 {wifi ip when not connected returns error} -body {
+    wifi ip
+} -returnCodes error -match glob -result {*not connected*}
+
+# --- Network-dependent tests ---
+
+test run wifi-4.1 {wifi scan returns list} -body {
+    wifi init
+    set networks [wifi scan]
+    expr {[llength $networks] >= 0}
+} -result {1} -constraints wifi_available
+
+test run wifi-4.2 {wifi connect to network} -body {
+    wifi init
+    wifi connect $wifi_ssid $wifi_pass
+} -result {connected} -constraints wifi_available
+
+test run wifi-4.3 {wifi status after connect} -body {
+    wifi status
+} -result {connected} -constraints wifi_available
+
+test run wifi-4.4 {wifi ip returns valid IP} -body {
+    set ip [wifi ip]
+    expr {[string match "*.*.*.*" $ip]}
+} -result {1} -constraints wifi_available
+
+test run wifi-4.5 {wifi disconnect} -body {
+    wifi disconnect
+} -result {disconnected} -constraints wifi_available
+
+test run wifi-4.6 {wifi status after disconnect} -body {
+    wifi status
+} -result {disconnected} -constraints wifi_available
+
+test report

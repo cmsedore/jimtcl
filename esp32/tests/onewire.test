@@ -1,0 +1,65 @@
+# onewire.test -- OneWire extension tests
+#
+# Requires: onewire_hw constraint if a DS18B20 is connected to GPIO 4.
+
+test suite "OneWire Extension"
+test reset
+
+# Set to 1 if a DS18B20 sensor is connected to GPIO 4
+test constraint onewire_hw 0
+
+# --- Init (valid pin, does not crash) ---
+
+test run ow-1.1 {init OneWire on pin} -body {
+    onewire init 4
+} -result {}
+
+# --- Reset (returns 0 if nothing connected, 1 if device present) ---
+
+test run ow-1.2 {reset returns 0 or 1} -body {
+    onewire init 4
+    set p [onewire reset 4]
+    expr {$p == 0 || $p == 1}
+} -result {1}
+
+# --- Search (returns empty list if nothing connected) ---
+
+test run ow-1.3 {search returns a list} -body {
+    onewire init 4
+    set roms [onewire search 4]
+    expr {[llength $roms] >= 0}
+} -result {1}
+
+# --- Error cases ---
+
+test run ow-2.1 {invalid pin for init} -body {
+    onewire init 999
+} -returnCodes error -match glob -result {*invalid GPIO pin*}
+
+test run ow-2.2 {invalid pin for reset} -body {
+    onewire reset 999
+} -returnCodes error -match glob -result {*invalid GPIO pin*}
+
+# --- Hardware-dependent: DS18B20 temperature reading ---
+
+test run ow-3.1 {search finds at least one device} -body {
+    onewire init 4
+    set roms [onewire search 4]
+    expr {[llength $roms] > 0}
+} -result {1} -constraints onewire_hw
+
+test run ow-3.2 {read temperature from DS18B20} -body {
+    onewire init 4
+    set roms [onewire search 4]
+    set rom [lindex $roms 0]
+    set temp [onewire read_temp 4 $rom]
+    expr {[string is double -strict $temp] && $temp > -40 && $temp < 125}
+} -result {1} -constraints onewire_hw
+
+test run ow-3.3 {read_temp with skip ROM (all)} -body {
+    onewire init 4
+    set temp [onewire read_temp 4 all]
+    expr {[string is double -strict $temp]}
+} -result {1} -constraints onewire_hw
+
+test report

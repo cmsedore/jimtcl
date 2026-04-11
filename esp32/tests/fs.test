@@ -1,0 +1,115 @@
+# fs.test -- Filesystem extension tests
+# Tests SPIFFS filesystem operations. Requires SPIFFS partition but no external hardware.
+
+test suite "Filesystem Extension"
+test reset
+
+# Mount SPIFFS first (ignore error if already mounted)
+catch { fs mount }
+
+# --- Write and read round-trip ---
+
+test run fs-1.1 {write file} -body {
+    set bytes [fs write /data/test1.txt "hello world"]
+    expr {$bytes > 0}
+} -result {1}
+
+test run fs-1.2 {read file} -body {
+    fs read /data/test1.txt
+} -result {hello world}
+
+test run fs-1.3 {write and read round-trip} -body {
+    fs write /data/roundtrip.txt "ESP32 test data"
+    fs read /data/roundtrip.txt
+} -result {ESP32 test data}
+
+test run fs-1.4 {write overwrites existing file} -body {
+    fs write /data/overwrite.txt "first"
+    fs write /data/overwrite.txt "second"
+    fs read /data/overwrite.txt
+} -result {second}
+
+# --- Exists ---
+
+test run fs-2.1 {exists returns 1 for existing file} -body {
+    fs write /data/existstest.txt "data"
+    fs exists /data/existstest.txt
+} -result {1}
+
+test run fs-2.2 {exists returns 0 for nonexistent file} -body {
+    fs exists /data/no_such_file_xyz.txt
+} -result {0}
+
+# --- Append ---
+
+test run fs-3.1 {append to file} -body {
+    fs write /data/appendtest.txt "hello"
+    fs append /data/appendtest.txt " world"
+    fs read /data/appendtest.txt
+} -result {hello world}
+
+test run fs-3.2 {append creates file if missing} -body {
+    catch { fs delete /data/newappend.txt }
+    fs append /data/newappend.txt "fresh"
+    fs read /data/newappend.txt
+} -result {fresh}
+
+# --- Delete ---
+
+test run fs-4.1 {delete file} -body {
+    fs write /data/deleteme.txt "gone"
+    fs delete /data/deleteme.txt
+    fs exists /data/deleteme.txt
+} -result {0}
+
+test run fs-4.2 {delete nonexistent file} -body {
+    fs delete /data/no_such_file_to_delete.txt
+} -returnCodes error -match glob -result {cannot delete*}
+
+# --- List ---
+
+test run fs-5.1 {list shows created files} -body {
+    fs write /data/listtest.txt "data"
+    set files [fs list /data]
+    set found 0
+    foreach f $files {
+        if {$f eq "listtest.txt"} { set found 1 }
+    }
+    set found
+} -result {1}
+
+test run fs-5.2 {list returns a list} -body {
+    set files [fs list /data]
+    expr {[llength $files] >= 0}
+} -result {1}
+
+# --- Info ---
+
+test run fs-6.1 {info returns total and used} -body {
+    set info [fs info]
+    set has_total [dict exists $info total]
+    set has_used [dict exists $info used]
+    list $has_total $has_used
+} -result {1 1}
+
+test run fs-6.2 {info total is positive} -body {
+    set info [fs info]
+    expr {[dict get $info total] > 0}
+} -result {1}
+
+# --- Read error ---
+
+test run fs-7.1 {read nonexistent file} -body {
+    fs read /data/absolutely_no_file.txt
+} -returnCodes error -match glob -result {cannot open file*}
+
+# --- Cleanup test files ---
+catch { fs delete /data/test1.txt }
+catch { fs delete /data/roundtrip.txt }
+catch { fs delete /data/overwrite.txt }
+catch { fs delete /data/existstest.txt }
+catch { fs delete /data/appendtest.txt }
+catch { fs delete /data/newappend.txt }
+catch { fs delete /data/listtest.txt }
+
+test report

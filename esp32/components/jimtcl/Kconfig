@@ -1,0 +1,240 @@
+menu "Jim Tcl Extensions"
+
+    config JIM_EXT_HTTP
+        bool "Enable HTTP client extension"
+        default y
+        help
+            Adds the [http] command for HTTP GET/POST/PUT/DELETE
+            with synchronous and async (callback) modes.
+
+    config JIM_EXT_WEBSOCKET
+        bool "Enable WebSocket client extension"
+        default n
+        help
+            Adds the [ws] command for WebSocket connections.
+            Pulls in the esp_websocket_client managed component.
+
+    config JIM_EXT_MQTT
+        bool "Enable MQTT client extension"
+        default y
+        help
+            Adds the [mqtt] command for MQTT publish/subscribe.
+
+    config JIM_EXT_JSON
+        bool "Enable JSON extension (cJSON)"
+        default y
+        help
+            Adds the [json] command for encoding/decoding JSON using
+            ESP-IDF's bundled cJSON library. Also enables -json flags
+            in the HTTP, MQTT, and WebSocket extensions.
+
+    config JIM_EXT_TWAI
+        bool "Enable TWAI (CAN bus) extension"
+        default n
+        help
+            Adds the [twai] command for CAN bus communication via the
+            ESP32 TWAI controller. Only available on chips with TWAI
+            hardware (SOC_TWAI_SUPPORTED).
+
+    config JIM_EXT_SERIAL
+        bool "Enable Serial (UART) extension"
+        default y
+        help
+            Adds the [serial] command for UART serial port communication.
+            Supports up to 3 UART ports with configurable baud rate,
+            data bits, stop bits, parity, and async listener mode.
+
+    config JIM_EXT_ADC
+        bool "Enable ADC extension"
+        default y
+        help
+            Adds the [adc] command for analog-to-digital conversion.
+
+    config JIM_EXT_PWM
+        bool "Enable PWM (LEDC) extension"
+        default y
+        help
+            Adds the [pwm] command for pulse-width modulation via LEDC.
+
+    config JIM_EXT_TIMER
+        bool "Enable Timer extension"
+        default y
+        help
+            Adds the [timer] command for software timers that fire
+            callbacks to named tasks.
+
+    config JIM_EXT_FS
+        bool "Enable Filesystem (SPIFFS) extension"
+        default y
+        help
+            Adds the [fs] command for SPIFFS filesystem access.
+
+    config JIM_EXT_OTA
+        bool "Enable OTA update extension"
+        default y
+        help
+            Adds the [ota] command for over-the-air firmware updates.
+
+    config JIM_EXT_SPI
+        bool "Enable SPI master extension"
+        default y
+        help
+            Adds the [spi] command for SPI bus communication.
+
+    config JIM_EXT_ONEWIRE
+        bool "Enable OneWire extension"
+        default y
+        help
+            Adds the [onewire] command for 1-Wire bus devices (DS18B20, etc).
+
+    config JIM_EXT_CRON
+        bool "Enable Cron/scheduler extension"
+        default y
+        help
+            Adds the [cron] command for periodic script execution via
+            FreeRTOS timers delivering callbacks to tasks.
+
+    config JIM_EXT_SYSLOG
+        bool "Enable Syslog extension"
+        default y
+        help
+            Adds the [syslog] command for UDP syslog (RFC 5424) output
+            with optional puts redirect.
+
+    config JIM_EXT_TEST
+        bool "Enable Test framework extension"
+        default y
+        help
+            Adds the [test] command for running Tcl tests on the ESP32
+            REPL. Provides test run, constraint, report, reset, and
+            suite subcommands.
+
+    config JIM_EXT_TCP
+        bool "Enable TCP socket extension"
+        default y
+        help
+            Adds the [tcp] command for TCP client/server communication
+            using lwIP BSD sockets. Supports raw and mpack modes with
+            COBS framing, and async listener callbacks.
+
+    config JIM_EXT_BLE
+        bool "Enable BLE (NimBLE) extension"
+        default n
+        depends on BT_ENABLED && BT_NIMBLE_ENABLED
+        help
+            Adds the [ble] command for Bluetooth Low Energy communication
+            using the NimBLE stack. Supports peripheral (GATT server with
+            advertising) and central (scan, connect, discover, read/write)
+            roles. Requires Bluetooth and NimBLE to be enabled in menuconfig.
+            Uses significant memory -- enable only when needed.
+
+    config JIM_EXT_ESPNOW
+        bool "Enable ESP-NOW extension"
+        default n
+        help
+            Adds the [espnow] command for ESP-NOW peer-to-peer
+            connectionless communication. Requires WiFi to be
+            initialized (but not connected). Supports raw and
+            mpack payload encoding. Max 250 bytes per frame.
+
+    config JIM_EXT_MDNS
+        bool "Enable mDNS extension"
+        default y
+        help
+            Adds the [mdns] command for mDNS zero-config networking
+            and service discovery. Supports service registration,
+            service query, and hostname resolution.
+
+    config JIM_EXT_SNTP
+        bool "Enable SNTP time sync extension"
+        default y
+        help
+            Adds the [sntp] command for network time synchronization
+            via SNTP. Supports server configuration, timezone setting,
+            and time formatting.
+
+    config JIM_EXT_MODBUS
+        bool "Enable Modbus RTU master extension"
+        default n
+        help
+            Adds the [modbus] command for Modbus RTU master over UART.
+            Supports reading/writing holding registers, input registers,
+            and coils. Uses raw frame building with CRC16 -- no external
+            Modbus library needed. Specialized industrial use case.
+
+    config JIM_EXT_MPACK
+        bool "Enable MessagePack extension"
+        default y
+        help
+            Adds the [mpack] command for MessagePack encode/decode and
+            -mpack flags on protocol extensions (serial, http, mqtt, ws).
+            Embeds the ludocode/mpack library.
+
+    config JIM_EXT_CTLPLANE
+        bool "Enable control plane extension"
+        default y
+        depends on JIM_EXT_MPACK
+        help
+            Adds the [ctlplane] command for a binary management protocol
+            over serial or WebSocket. Supports VM introspection, command
+            dispatch, auth, and variable loading via MessagePack+COBS.
+
+    config JIM_EXT_RMT
+        bool "Enable RMT (Remote Control Transceiver) extension"
+        default y
+        help
+            Adds the [rmt] command for the RMT peripheral. Supports
+            raw TX/RX symbol transmission for IR protocols, plus a
+            dedicated WS2812/NeoPixel addressable LED strip driver.
+
+    config JIM_EXT_PCNT
+        bool "Enable PCNT (Pulse Counter) extension"
+        default y
+        help
+            Adds the [pcnt] command for hardware pulse counting.
+            Useful for rotary encoders, flow meters, and frequency
+            measurement with configurable edge detection and
+            threshold watch callbacks.
+
+    config JIM_EXT_MCPWM
+        bool "Enable MCPWM (Motor Control PWM) extension"
+        default n
+        help
+            Adds the [mcpwm] command for motor control PWM. Supports
+            DC motor H-bridge control with dual outputs and servo
+            motor angle control. Only available on chips with MCPWM
+            hardware (SOC_MCPWM_SUPPORTED).
+
+    choice JIM_BOOT_MODE
+        prompt "Boot mode"
+        default JIM_BOOT_REPL
+        help
+            Select whether the device boots into the interactive Tcl REPL
+            or the MessagePack control plane on the console UART.
+
+        config JIM_BOOT_REPL
+            bool "Interactive REPL"
+
+        config JIM_BOOT_MPACK
+            bool "MessagePack control plane on UART"
+            depends on JIM_EXT_CTLPLANE
+    endchoice
+
+    config JIM_CTLPLANE_AUTH_KEY
+        string "Control plane auth key (empty = no auth)"
+        default ""
+        depends on JIM_EXT_CTLPLANE
+        help
+            If non-empty, the control plane requires authentication
+            before accepting commands. The host must send an auth
+            command with this key to establish a session.
+
+    config JIM_CTLPLANE_AUTH_TIMEOUT
+        int "Auth session timeout (seconds, 0 = no timeout)"
+        default 900
+        depends on JIM_EXT_CTLPLANE
+        help
+            After this many seconds of inactivity, an authenticated
+            session expires and re-authentication is required.
+
+endmenu

@@ -124,7 +124,11 @@ static int nvs_cmd_set(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 
     if (argc >= 4) {
         const char *opt = Jim_String(argv[3]);
-        if (strcmp(opt, "-type") == 0 && argc >= 5) {
+        if (strcmp(opt, "-type") == 0) {
+            if (argc < 5) {
+                Jim_SetResultString(interp, "missing value for -type", -1);
+                return JIM_ERR;
+            }
             type = Jim_String(argv[4]);
         } else {
             type = opt; /* Allow: nvs set h key val str */

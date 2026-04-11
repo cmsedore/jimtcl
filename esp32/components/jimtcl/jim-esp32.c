@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "esp_system.h"
+#include "esp_chip_info.h"
 #include "esp_timer.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -17,6 +18,7 @@
 
 #include "jim.h"
 #include "jim-esp32.h"
+#include "linenoise/linenoise.h"
 
 static const char *TAG = "jimtcl";
 
@@ -36,34 +38,6 @@ static void *JimEsp32Allocator(void *ptr, size_t size)
         return heap_caps_realloc(ptr, size, MALLOC_CAP_DEFAULT);
     }
     return heap_caps_malloc(size, MALLOC_CAP_DEFAULT);
-}
-
-/* ---------------------------------------------------------------------------
- * Time support (jim.c calls Jim_GetTimeUsec)
- * ---------------------------------------------------------------------------*/
-
-jim_wide Jim_GetTimeUsec(unsigned type)
-{
-    /* esp_timer_get_time() returns microseconds since boot (monotonic) */
-    (void)type;
-    return (jim_wide)esp_timer_get_time();
-}
-
-/* ---------------------------------------------------------------------------
- * Environment stubs (jim.c references these)
- * ---------------------------------------------------------------------------*/
-
-static char *empty_environ[] = { NULL };
-
-char **Jim_GetEnviron(void)
-{
-    return empty_environ;
-}
-
-void Jim_SetEnviron(char **env)
-{
-    (void)env;
-    /* No-op on ESP32 - no process environment */
 }
 
 /* ---------------------------------------------------------------------------
@@ -219,6 +193,35 @@ static int Jim_Esp32GetsCmd(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
     return JIM_OK;
 }
 
+/* Forward declaration */
+static int Jim_PasteModeCmd(Jim_Interp *interp, int argc, Jim_Obj *const *argv);
+
+/* ---------------------------------------------------------------------------
+ * dotsugar command: enable/disable $var.key.subkey dict access
+ * ---------------------------------------------------------------------------*/
+
+/* Global flag shared with the jim.c parser */
+extern int jim_dotsugar_enabled;
+
+static int Jim_DotSugarCmd(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
+{
+    if (argc == 1) {
+        /* Query current state */
+        Jim_SetResultInt(interp, interp->dotsugar);
+        return JIM_OK;
+    }
+    if (argc == 2) {
+        long val;
+        if (Jim_GetLong(interp, argv[1], &val) != JIM_OK) return JIM_ERR;
+        interp->dotsugar = (val != 0);
+        jim_dotsugar_enabled = (val != 0);
+        Jim_SetResultInt(interp, interp->dotsugar);
+        return JIM_OK;
+    }
+    Jim_SetResultString(interp, "wrong # args: should be \"dotsugar ?0|1?\"", -1);
+    return JIM_ERR;
+}
+
 /* ---------------------------------------------------------------------------
  * Platform init
  * ---------------------------------------------------------------------------*/
@@ -237,54 +240,98 @@ int Jim_Esp32PlatformInit(Jim_Interp *interp)
     Jim_CreateCommand(interp, "esp32", Jim_Esp32InfoCmd, NULL, NULL);
     Jim_CreateCommand(interp, "puts", Jim_Esp32PutsCmd, NULL, NULL);
     Jim_CreateCommand(interp, "gets", Jim_Esp32GetsCmd, NULL, NULL);
+    Jim_CreateCommand(interp, "dotsugar", Jim_DotSugarCmd, NULL, NULL);
+    Jim_CreateCommand(interp, "paste", Jim_PasteModeCmd, NULL, NULL);
 
     return JIM_OK;
 }
 
 /* ---------------------------------------------------------------------------
- * Interactive REPL over UART
+ * Interactive REPL over UART using linenoise
+ *
+ * Provides line editing (arrow keys, Home/End), command history,
+ * and multi-line Tcl script accumulation.
  * ---------------------------------------------------------------------------*/
+
+/* Paste/smart mode toggle.
+ * Start in paste/dumb mode (safe for UART — no ESC[6n cursor queries).
+ * Toggle via the 'paste' Tcl command. */
+static int repl_dumb_mode = 1;
+
+static void repl_set_mode(int dumb)
+{
+    repl_dumb_mode = dumb;
+    linenoiseSetDumbMode(dumb);
+}
+
+static int Jim_PasteModeCmd(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
+{
+    if (argc == 1) {
+        /* Toggle */
+        repl_set_mode(!repl_dumb_mode);
+    } else {
+        long val;
+        if (Jim_GetLong(interp, argv[1], &val) != JIM_OK) return JIM_ERR;
+        repl_set_mode(val != 0);
+    }
+    printf("[%s mode]\n", repl_dumb_mode ? "paste" : "smart");
+    Jim_SetResultString(interp, repl_dumb_mode ? "paste" : "smart", -1);
+    return JIM_OK;
+}
 
 int Jim_Esp32InteractivePrompt(Jim_Interp *interp)
 {
-    char line[512];
     Jim_Obj *scriptObj = NULL;
     int partial = 0;
 
+    /* Configure linenoise */
+    linenoiseSetMultiLine(1);
+    linenoiseSetMaxLineLen(512);
+    linenoiseHistorySetMaxLen(50);
+    linenoiseAllowEmpty(false);
+
+    /* Start in paste/dumb mode — safe default for UART.
+     * Smart mode sends ESC[6n cursor queries that eat input characters. */
+    linenoiseSetDumbMode(1);
+
     ESP_LOGI(TAG, "Jim Tcl %d.%d on ESP32 - Interactive Mode",
-             JIM_VERSION / 100, JIM_VERSION % 100);
+             JIM_ABI_VERSION / 100, JIM_ABI_VERSION % 100);
     ESP_LOGI(TAG, "Free heap: %lu bytes", (unsigned long)esp_get_free_heap_size());
+    printf("Type 'paste' to toggle paste/smart mode\n");
 
     while (1) {
-        /* Print prompt */
-        if (partial) {
-            fputs("> ", stdout);
-        } else {
-            fputs("jim> ", stdout);
-        }
-        fflush(stdout);
+        const char *prompt = partial ? "> " : "jim> ";
+        char *line = linenoise(prompt);
 
-        if (fgets(line, sizeof(line), stdin) == NULL) {
-            /* EOF - yield and retry (UART may have no data) */
-            vTaskDelay(pdMS_TO_TICKS(100));
+        if (line == NULL) {
+            /* EOF or Ctrl-C */
+            if (partial) {
+                Jim_DecrRefCount(interp, scriptObj);
+                scriptObj = NULL;
+                partial = 0;
+            }
             continue;
         }
 
         if (!partial) {
             scriptObj = Jim_NewStringObj(interp, line, -1);
+            Jim_IncrRefCount(scriptObj);
         } else {
             Jim_AppendString(interp, scriptObj, "\n", 1);
             Jim_AppendString(interp, scriptObj, line, -1);
         }
-        Jim_IncrRefCount(scriptObj);
 
         if (Jim_ScriptIsComplete(interp, scriptObj, NULL)) {
+            /* Add complete command to history */
+            linenoiseHistoryAdd(line);
+
             int retcode = Jim_EvalObj(interp, scriptObj);
             Jim_DecrRefCount(interp, scriptObj);
             scriptObj = NULL;
             partial = 0;
 
             if (retcode == JIM_EXIT) {
+                linenoiseFree(line);
                 break;
             }
 
@@ -292,18 +339,23 @@ int Jim_Esp32InteractivePrompt(Jim_Interp *interp)
             const char *result = Jim_String(Jim_GetResult(interp));
             if (result[0] != '\0') {
                 if (retcode == JIM_ERR) {
-                    fprintf(stdout, "Error: %s\n", result);
+                    printf("Error: %s\n", result);
                 } else {
-                    fprintf(stdout, "%s\n", result);
+                    printf("%s\n", result);
                 }
-                fflush(stdout);
             }
         } else {
-            /* Incomplete script, accumulate more input */
+            /* Incomplete script — accumulate more input */
+            int slen;
+            const char *s = Jim_GetString(scriptObj, &slen);
+            Jim_Obj *newObj = Jim_NewStringObj(interp, s, slen);
+            Jim_IncrRefCount(newObj);
             Jim_DecrRefCount(interp, scriptObj);
-            scriptObj = Jim_NewStringObj(interp, Jim_String(scriptObj), -1);
+            scriptObj = newObj;
             partial = 1;
         }
+
+        linenoiseFree(line);
     }
 
     return JIM_OK;

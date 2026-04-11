@@ -68,6 +68,7 @@ typedef struct {
     char callback_proc[64];    /* Name of Tcl proc to call for consultation */
     int is_main;               /* True if this is the main interpreter (not on a task) */
     sleep_vote_t last_vote;    /* Result of most recent consultation */
+    char veto_reason[64];      /* Reason string from last veto */
 } sleep_voter_t;
 
 /* Global sleep manager state */
